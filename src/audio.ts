@@ -66,6 +66,7 @@ class SoundManager {
   }
 
   public toggleMute(): boolean {
+    this.ensureContext();
     this.isMuted = !this.isMuted;
     if (this.masterGain && this.ctx) {
       this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : 0.5, this.ctx.currentTime, 0.05);

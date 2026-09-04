@@ -4,22 +4,20 @@
 // ==========================================
 
 import {
+  GRID_COLS,
+  GRID_ROWS,
+  SURFACE_ROW,
+  TILE_SIZE,
+} from './types';
+import type {
   AntSim,
-  AspirationLevel,
   AspirationType,
   BroodEntity,
   CasteType,
   ColonyObject,
   ColonyState,
-  GRID_COLS,
-  GRID_ROWS,
-  HeldItemType,
   Personality,
-  QueuedAction,
-  SpeechBubble,
   SurfaceEntity,
-  SURFACE_ROW,
-  TILE_SIZE,
   TileType,
   WantFearKey,
   WantOrFear,
@@ -1288,7 +1286,7 @@ export class Simulation {
       duration: 15.0, // max timeout
       elapsed: 0,
       targetType: 'none',
-      onUpdate: (a, dt) => {
+      onUpdate: (a) => {
         const dx = targetX - a.x;
         const dy = targetY - a.y;
         const dist = Math.hypot(dx, dy);

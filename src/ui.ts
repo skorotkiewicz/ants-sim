@@ -3,7 +3,7 @@
 // Console, Action Queue, Pie Menu, Catalog
 // ==========================================
 
-import { AntSim, GameMode, Motives, QueuedAction } from './types';
+import type { AntSim, GameMode, Motives } from './types';
 import { Simulation } from './simulation';
 import { audio } from './audio';
 import { CATALOG } from './catalog';
@@ -20,9 +20,6 @@ export class UIManager {
 
   // Pie Menu
   public pieMenuVisible: boolean = false;
-  private pieX: number = 0;
-  private pieY: number = 0;
-  private pieOptions: Array<{ label: string; icon: string; action: () => void }> = [];
 
   // Notification Banner
   private notifTimeout: number | null = null;
@@ -305,9 +302,6 @@ export class UIManager {
   // ==========================================
 
   public openPieMenu(screenX: number, screenY: number, options: Array<{ label: string; icon: string; action: () => void }>) {
-    this.pieX = screenX;
-    this.pieY = screenY;
-    this.pieOptions = options;
     this.pieMenuVisible = true;
 
     const pieMenu = document.getElementById('pie-menu')!;
@@ -393,7 +387,7 @@ export class UIManager {
     }
   }
 
-  private drawPortrait(ant: AntSim, dt: number) {
+  private drawPortrait(ant: AntSim, _dt: number) {
     const canvas = document.getElementById('portrait-canvas') as HTMLCanvasElement;
     if (!canvas) return;
     const ctx = canvas.getContext('2d')!;
