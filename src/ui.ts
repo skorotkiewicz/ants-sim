@@ -24,7 +24,6 @@ export class UIManager {
 
   // CAS (Create-An-Ant) State
   private casPersonality = { neat: 5, outgoing: 5, active: 5, playful: 5, nice: 5 };
-  private casPointsRemaining = 0;
 
   constructor(sim: Simulation, container: HTMLElement) {
     this.sim = sim;
@@ -515,13 +514,16 @@ export class UIManager {
         const target = e.currentTarget as HTMLElement;
         const trait = target.dataset.trait as keyof typeof this.casPersonality;
         const delta = parseInt(target.dataset.delta || '0', 10);
+        const totalUsed = Object.values(this.casPersonality).reduce((a, b) => a + b, 0);
         const cur = this.casPersonality[trait];
-        if (delta > 0 && cur < 10) {
+        if (delta > 0 && cur < 10 && totalUsed < 30) {
           this.casPersonality[trait]++;
         } else if (delta < 0 && cur > 0) {
           this.casPersonality[trait]--;
         }
         document.getElementById(`cas-val-${trait}`)!.innerText = `${this.casPersonality[trait]}`;
+        const newTotal = Object.values(this.casPersonality).reduce((a, b) => a + b, 0);
+        document.getElementById('cas-points-left')!.innerText = `${30 - newTotal}`;
         audio.playClick();
       });
     });
