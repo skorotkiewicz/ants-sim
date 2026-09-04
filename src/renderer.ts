@@ -4,13 +4,9 @@
 // ==========================================
 
 import {
-  AntSim,
-  BroodEntity,
-  ColonyObject,
   GRID_COLS,
   GRID_ROWS,
   SURFACE_ROW,
-  SurfaceEntity,
   TILE_SIZE,
 } from './types';
 import { Simulation } from './simulation';
@@ -911,6 +907,15 @@ export class Renderer {
     ctx.moveTo(0, -diamondH);
     ctx.lineTo(sinR * diamondW, 0);
     ctx.lineTo(0, diamondH);
+    ctx.closePath();
+    ctx.fill();
+
+    // Facet 3 (Bottom Shadow Facet)
+    ctx.fillStyle = colorBottom;
+    ctx.beginPath();
+    ctx.moveTo(0, diamondH);
+    ctx.lineTo(cosR * diamondW, 0);
+    ctx.lineTo(-sinR * diamondW, 0);
     ctx.closePath();
     ctx.fill();
 
