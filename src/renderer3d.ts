@@ -646,6 +646,7 @@ export class Renderer3D {
             new THREE.Vector2(4.5, 7), new THREE.Vector2(7, 10), new THREE.Vector2(10, 12),
           ], 32), brass, throat.x, throat.y, throat.z);
           horn.name = 'radio-horn';
+          horn.receiveShadow = false;
           horn.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
           const mouth = throat.clone().addScaledVector(direction, 12);
           const rim = addPart(new THREE.TorusGeometry(10, 0.8, 8, 32), brass, mouth.x, mouth.y, mouth.z);
