@@ -3,7 +3,7 @@
 // Buy Mode Furniture & Amenities
 // ==========================================
 
-import { ObjectCatalogItem } from './types';
+import type { ObjectCatalogItem } from './types';
 
 export const CATALOG: ObjectCatalogItem[] = [
   // COMFORT

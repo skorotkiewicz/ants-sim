@@ -9,6 +9,7 @@ import { Renderer } from './renderer';
 import { UIManager } from './ui';
 import { audio } from './audio';
 import { GRID_COLS, GRID_ROWS, SURFACE_ROW, TILE_SIZE } from './types';
+import type { AntSim } from './types';
 
 class GameApp {
   private sim: Simulation;
