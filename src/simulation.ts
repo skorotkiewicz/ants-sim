@@ -840,7 +840,7 @@ export class Simulation {
 
   private updateAnt(ant: AntSim, dt: number) {
     ant.motives.hunger = Math.max(0, ant.motives.hunger - dt * 0.22);
-    ant.motives.energy = Math.max(0, ant.motives.energy - dt * (ant.isSleeping ? -1.8 : 0.18));
+    ant.motives.energy = Math.max(0, Math.min(100, ant.motives.energy + dt * (ant.isSleeping ? 4.3 : -0.18)));
     ant.motives.grooming = Math.max(0, ant.motives.grooming - dt * 0.12);
     ant.motives.social = Math.max(0, ant.motives.social - dt * 0.14);
     ant.motives.fun = Math.max(0, ant.motives.fun - dt * 0.16);
@@ -870,7 +870,15 @@ export class Simulation {
       if (ant.bubble.timer <= 0) ant.bubble = null;
     }
 
-    if (ant.actionQueue.length > 0) {
+    if (ant.isSleeping) {
+      ant.vx = 0;
+      ant.vy = 0;
+      if (ant.motives.energy >= 98) {
+        ant.isSleeping = false;
+        ant.stateText = 'Awake and refreshed!';
+        this.releaseBedReservations(ant);
+      }
+    } else if (ant.actionQueue.length > 0) {
       const action = ant.actionQueue[0];
       if (action.elapsed === 0 && action.onStart) action.onStart(ant);
 
@@ -909,15 +917,6 @@ export class Simulation {
   // ==========================================
 
   private runAntAutonomy(ant: AntSim, dt: number) {
-    if (ant.isSleeping) {
-      ant.motives.energy = Math.min(100, ant.motives.energy + dt * 2.5);
-      if (ant.motives.energy >= 98) {
-        ant.isSleeping = false;
-        ant.stateText = 'Awake and refreshed!';
-      }
-      return;
-    }
-
     const m = ant.motives;
 
     if (m.hunger < 45) {
@@ -1324,15 +1323,42 @@ export class Simulation {
   // PATHFINDING & MOVEMENT UTILS
   // ==========================================
 
+  private releaseBedReservations(ant: AntSim) {
+    for (const obj of this.colonyObjects) {
+      if (obj.occupiedByAntId === ant.id) obj.occupiedByAntId = undefined;
+    }
+  }
+
+  public cancelAction(ant: AntSim, index: number) {
+    const action = ant.actionQueue[index];
+    if (!action?.interruptible) return;
+    ant.actionQueue.splice(index, 1);
+    if (index === 0) {
+      ant.vx = 0;
+      ant.vy = 0;
+      ant.isDigging = false;
+      ant.isDancing = false;
+      ant.stateText = 'Action canceled';
+      if (!ant.isSleeping) this.releaseBedReservations(ant);
+    } else {
+      const obj = this.colonyObjects.find(o => o.id === action.targetId);
+      if (obj?.occupiedByAntId === ant.id) obj.occupiedByAntId = undefined;
+    }
+  }
+
   public queueWalkToCoord(ant: AntSim, targetX: number, targetY: number, onArrival: () => void) {
+    targetX = Math.max(TILE_SIZE, Math.min((GRID_COLS - 2) * TILE_SIZE, targetX));
+    targetY = Math.max(2 * TILE_SIZE, Math.min((GRID_ROWS - 2) * TILE_SIZE, targetY));
     ant.actionQueue.push({
       id: `walk_${Math.random()}`,
       name: 'Walk to location',
       icon: '🐾',
-      duration: 15.0,
+      duration: Infinity,
       elapsed: 0,
       targetType: 'none',
-      onUpdate: a => {
+      targetX,
+      targetY,
+      onUpdate: (a, dt) => {
         const dx = targetX - a.x;
         const dy = targetY - a.y;
         const dist = Math.hypot(dx, dy);
@@ -1343,7 +1369,7 @@ export class Simulation {
           return true;
         }
 
-        const speed = a.aspirationLevel === 'Platinum' ? 75 : 55;
+        const speed = Math.min(a.aspirationLevel === 'Platinum' ? 75 : 55, dist / dt);
         a.vx = (dx / dist) * speed;
         a.vy = (dy / dist) * speed;
         return false;
@@ -1359,6 +1385,9 @@ export class Simulation {
 
   public queueWalkToObject(ant: AntSim, obj: ColonyObject, onArrival: () => void) {
     this.queueWalkToCoord(ant, obj.x + obj.width / 2, obj.y + obj.height / 2, onArrival);
+    const action = ant.actionQueue[ant.actionQueue.length - 1];
+    action.targetType = 'object';
+    action.targetId = obj.id;
   }
 
   public getSelectedAnt(): AntSim | null {
@@ -1409,11 +1438,27 @@ export class Simulation {
       ...saved,
       actionQueue: [],
       bubble: null,
+      vx: 0,
+      vy: 0,
+      vz: 0,
+      isDigging: false,
+      isDancing: false,
+      stateText: saved.isSleeping ? 'Sleeping' : 'Idling pleasantly',
     }));
 
     this.brood = [...data.brood];
     this.colonyObjects = [...data.colonyObjects];
     this.surfaceEntities = [...data.surfaceEntities];
+
+    for (const obj of this.colonyObjects) {
+      if (!this.ants.some(a => a.id === obj.occupiedByAntId && a.isSleeping)) {
+        obj.occupiedByAntId = undefined;
+      }
+    }
+    for (const entity of [...this.ants, ...this.brood, ...this.colonyObjects, ...this.surfaceEntities]) {
+      const id = Number(entity.id.match(/_(\d+)$/)?.[1]);
+      if (Number.isSafeInteger(id)) this.nextId = Math.max(this.nextId, id);
+    }
 
     audio.playSaveLoadChime();
   }

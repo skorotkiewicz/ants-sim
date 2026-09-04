@@ -66,8 +66,18 @@ class GameApp {
   }
 
   private setupKeyboard() {
+    window.addEventListener('blur', () => {
+      this.keysDown.clear();
+      this.isDraggingCamera = false;
+      this.isOrbiting = false;
+    });
+    window.addEventListener('focusin', () => this.keysDown.clear());
     window.addEventListener('keydown', e => {
+      const target = e.target;
+      if (target instanceof HTMLElement && (target.closest('input, textarea, select, button') || target.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       this.keysDown.add(e.code);
+      if (e.repeat) return;
 
       if (e.code === 'Space') {
         e.preventDefault();

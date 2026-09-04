@@ -305,6 +305,33 @@ export class Renderer3D {
   // 3D ANTHILL GRID VOXELS
   // ==========================================
 
+  private removeModel(model: THREE.Object3D) {
+    model.removeFromParent();
+    const geometries = new Set<THREE.BufferGeometry>();
+    const materials = new Set<THREE.Material>();
+    model.traverse(child => {
+      if (child instanceof THREE.Mesh) {
+        geometries.add(child.geometry);
+        for (const material of Array.isArray(child.material) ? child.material : [child.material]) {
+          materials.add(material);
+        }
+      }
+    });
+    geometries.forEach(geometry => geometry.dispose());
+    materials.forEach(material => material.dispose());
+  }
+
+  private pruneModels<T extends { id: string; stage?: string }>(models: Map<string, THREE.Group>, entities: T[]) {
+    const current = new Map(entities.map(entity => [entity.id, entity]));
+    for (const [id, model] of models) {
+      const entity = current.get(id);
+      if (!entity || model.userData.entity !== entity || model.userData.stage !== entity.stage) {
+        this.removeModel(model);
+        models.delete(id);
+      }
+    }
+  }
+
   private syncWorldGrid(sim: Simulation) {
     for (let r = SURFACE_ROW; r < GRID_ROWS; r++) {
       for (let c = 0; c < GRID_COLS; c++) {
@@ -330,6 +357,8 @@ export class Renderer3D {
             this.tileMeshes.set(key, mesh);
           }
 
+          (mesh.material as THREE.MeshStandardMaterial).color.setHex(tile.type === 'hard_rock' ? 0x4f5257 : 0x5a3920);
+
           // Blinking if marked for dig
           if (tile.markedForDig) {
             const blink = Math.sin(this.animTimer * 6) > 0;
@@ -341,7 +370,7 @@ export class Renderer3D {
         } else {
           // Excavated tunnel
           if (mesh) {
-            this.scene.remove(mesh);
+            this.removeModel(mesh);
             this.tileMeshes.delete(key);
           }
         }
@@ -354,6 +383,7 @@ export class Renderer3D {
   // ==========================================
 
   private syncSurfaceEntities(sim: Simulation) {
+    this.pruneModels(this.surfaceMeshes, sim.surfaceEntities);
     sim.surfaceEntities.forEach(ent => {
       let group = this.surfaceMeshes.get(ent.id);
       if (!group) {
@@ -423,6 +453,7 @@ export class Renderer3D {
           group.add(honeyMesh);
         }
 
+        group.userData.entity = ent;
         group.position.set(ent.x, -ent.y, ent.z);
         this.scene.add(group);
         this.surfaceMeshes.set(ent.id, group);
@@ -435,6 +466,7 @@ export class Renderer3D {
   // ==========================================
 
   private syncColonyObjects(sim: Simulation) {
+    this.pruneModels(this.objectMeshes, sim.colonyObjects);
     sim.colonyObjects.forEach(obj => {
       let group = this.objectMeshes.get(obj.id);
       if (!group) {
@@ -510,6 +542,7 @@ export class Renderer3D {
           group.add(shroomLight);
         }
 
+        group.userData.entity = obj;
         group.position.set(obj.x + obj.width / 2, -(obj.y + obj.height / 2), obj.z);
         this.scene.add(group);
         this.objectMeshes.set(obj.id, group);
@@ -522,6 +555,7 @@ export class Renderer3D {
   // ==========================================
 
   private syncBrood(sim: Simulation) {
+    this.pruneModels(this.broodMeshes, sim.brood);
     sim.brood.forEach(b => {
       let group = this.broodMeshes.get(b.id);
       if (!group) {
@@ -551,6 +585,8 @@ export class Renderer3D {
           group.add(pupa);
         }
 
+        group.userData.entity = b;
+        group.userData.stage = b.stage;
         group.position.set(b.x, -b.y, b.z);
         this.scene.add(group);
         this.broodMeshes.set(b.id, group);
@@ -563,10 +599,12 @@ export class Renderer3D {
   // ==========================================
 
   private syncAnts(sim: Simulation, dt: number) {
+    this.pruneModels(this.antMeshes, sim.ants);
     sim.ants.forEach(ant => {
       let group = this.antMeshes.get(ant.id);
       if (!group) {
         group = this.buildAnt3DModel(ant);
+        group.userData.entity = ant;
         this.scene.add(group);
         this.antMeshes.set(ant.id, group);
       }

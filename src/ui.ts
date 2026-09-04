@@ -9,6 +9,12 @@ import { audio } from './audio';
 import { CATALOG } from './catalog';
 import type { Renderer3D } from './renderer3d';
 
+function escapeHTML(value: string | number): string {
+  return String(value).replace(/[&<>"']/g, char => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  })[char]!);
+}
+
 export class UIManager {
   private sim: Simulation;
   private renderer: Renderer3D | null = null;
@@ -881,6 +887,16 @@ export class UIManager {
 
   private updateActionQueue(ant: AntSim) {
     const list = document.getElementById('action-queue-list')!;
+    const queueKey = JSON.stringify([ant.id, ...ant.actionQueue.map(action => action.id)]);
+    if (list.dataset.queueKey === queueKey) {
+      const action = ant.actionQueue[0];
+      const progress = list.querySelector<HTMLElement>('.action-progress-bar');
+      if (progress && action) {
+        progress.style.width = `${action.duration > 0 ? Math.min(100, action.elapsed / action.duration * 100) : 0}%`;
+      }
+      return;
+    }
+    list.dataset.queueKey = queueKey;
     list.innerHTML = '';
 
     ant.actionQueue.forEach((act, idx) => {
@@ -891,14 +907,14 @@ export class UIManager {
       const progress = act.duration > 0 ? Math.min(100, (act.elapsed / act.duration) * 100) : 0;
 
       card.innerHTML = `
-        <div class="action-card-icon">${act.icon}</div>
+        <div class="action-card-icon">${escapeHTML(act.icon)}</div>
         <div class="action-card-cancel">✕</div>
         ${idx === 0 ? `<div class="action-progress-ring"><div class="action-progress-bar" style="width: ${progress}%"></div></div>` : ''}
       `;
 
       card.addEventListener('click', e => {
         e.stopPropagation();
-        ant.actionQueue.splice(idx, 1);
+        this.sim.cancelAction(ant, idx);
         audio.playClick();
       });
 
@@ -936,14 +952,14 @@ export class UIManager {
   private updateWantsFearsTab(ant: AntSim) {
     const pane = document.getElementById('tab-pane-wants')!;
     const norm = Math.max(0, Math.min(100, ((ant.aspirationScore + 3000) / 11000) * 100));
-    const level = ant.aspirationLevel.toLowerCase();
+    const level = escapeHTML(ant.aspirationLevel.toLowerCase());
 
     pane.innerHTML = `
       <div class="aspiration-meter-col">
         <div class="aspiration-meter-track">
           <div class="aspiration-meter-fill ${level}" style="height: ${norm}%;"></div>
         </div>
-        <div class="aspiration-level-tag">${ant.aspirationLevel}</div>
+        <div class="aspiration-level-tag">${escapeHTML(ant.aspirationLevel)}</div>
       </div>
 
       <div class="wants-fears-lists">
@@ -952,9 +968,9 @@ export class UIManager {
           ${ant.wants
             .map(
               w => `
-            <div class="wf-card want" title="${w.name}: ${w.description}">
-              <div class="wf-card-icon">${w.icon}</div>
-              <div class="wf-card-points">+${w.points}</div>
+            <div class="wf-card want" title="${escapeHTML(w.name)}: ${escapeHTML(w.description)}">
+              <div class="wf-card-icon">${escapeHTML(w.icon)}</div>
+              <div class="wf-card-points">+${escapeHTML(w.points)}</div>
             </div>
           `
             )
@@ -966,9 +982,9 @@ export class UIManager {
           ${ant.fears
             .map(
               f => `
-            <div class="wf-card fear" title="${f.name}: ${f.description}">
-              <div class="wf-card-icon">${f.icon}</div>
-              <div class="wf-card-points">${f.points}</div>
+            <div class="wf-card fear" title="${escapeHTML(f.name)}: ${escapeHTML(f.description)}">
+              <div class="wf-card-icon">${escapeHTML(f.icon)}</div>
+              <div class="wf-card-points">${escapeHTML(f.points)}</div>
             </div>
           `
             )
@@ -990,7 +1006,7 @@ export class UIManager {
         <div class="rel-row">
           <div class="rel-name-col">
             <span>🐜</span>
-            <span>${o.name}</span>
+            <span>${escapeHTML(o.name)}</span>
           </div>
           <div class="rel-meters">
             <div class="rel-meter-box">
@@ -1036,11 +1052,11 @@ export class UIManager {
     const skillsHtml = `
       <div class="skills-col">
         <div class="sub-title">Skills</div>
-        <div class="skill-row"><span>⛏️ Digging:</span> <b>${ant.skills.digging}/10</b></div>
-        <div class="skill-row"><span>🌾 Foraging:</span> <b>${ant.skills.foraging}/10</b></div>
-        <div class="skill-row"><span>🍼 Brood Care:</span> <b>${ant.skills.nursing}/10</b></div>
-        <div class="skill-row"><span>⚔️ Combat:</span> <b>${ant.skills.combat}/10</b></div>
-        <div class="skill-row"><span>💬 Charisma:</span> <b>${ant.skills.charisma}/10</b></div>
+        <div class="skill-row"><span>⛏️ Digging:</span> <b>${escapeHTML(ant.skills.digging)}/10</b></div>
+        <div class="skill-row"><span>🌾 Foraging:</span> <b>${escapeHTML(ant.skills.foraging)}/10</b></div>
+        <div class="skill-row"><span>🍼 Brood Care:</span> <b>${escapeHTML(ant.skills.nursing)}/10</b></div>
+        <div class="skill-row"><span>⚔️ Combat:</span> <b>${escapeHTML(ant.skills.combat)}/10</b></div>
+        <div class="skill-row"><span>💬 Charisma:</span> <b>${escapeHTML(ant.skills.charisma)}/10</b></div>
       </div>
     `;
 
@@ -1051,9 +1067,9 @@ export class UIManager {
           ${ant.memories
             .map(
               m => `
-            <div class="mem-badge ${m.isPositive ? 'pos' : 'neg'}" title="${m.description}">
-              <span>${m.icon}</span>
-              <span>Day ${m.day}: ${m.title}</span>
+            <div class="mem-badge ${m.isPositive ? 'pos' : 'neg'}" title="${escapeHTML(m.description)}">
+              <span>${escapeHTML(m.icon)}</span>
+              <span>Day ${escapeHTML(m.day)}: ${escapeHTML(m.title)}</span>
             </div>
           `
             )
