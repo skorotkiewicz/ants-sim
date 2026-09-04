@@ -145,6 +145,50 @@ for (const item of CATALOG) {
   });
 }
 
+test('the gramophone has an open horn and its record stops when off or paused', () => {
+  const sim = controlledColony();
+  const renderer = sceneRenderer();
+  const radio = sim.colonyObjects.find(obj => obj.type === 'spore_radio')!;
+  renderer.syncColonyObjects(sim, 0);
+  const model = renderer.objectMeshes.get(radio.id);
+  const horn = model.getObjectByName('radio-horn');
+  const record = model.getObjectByName('radio-record');
+  const light = model.getObjectByName('radio-light');
+  expect(horn?.geometry.type).toBe('LatheGeometry');
+  expect(horn.material.side).toBe(THREE.DoubleSide);
+  const start = record.rotation.y;
+  renderer.syncColonyObjects(sim, 0.1);
+  expect(record.rotation.y).toBeGreaterThan(start);
+  radio.stateValue = 0;
+  const stopped = record.rotation.y;
+  renderer.syncColonyObjects(sim, 0.1);
+  expect(record.rotation.y).toBe(stopped);
+  expect(light.material.emissiveIntensity).toBe(0);
+  radio.stateValue = 1;
+  sim.state.timeScale = 0;
+  renderer.syncColonyObjects(sim, 0.1);
+  expect(record.rotation.y).toBe(stopped);
+});
+
+test('the throne has a seat in front of a taller backrest and a crown above it', () => {
+  const sim = controlledColony();
+  const renderer = sceneRenderer();
+  renderer.syncColonyObjects(sim);
+  const throne = sim.colonyObjects.find(obj => obj.type === 'queen_throne')!;
+  const model = renderer.objectMeshes.get(throne.id);
+  const bounds = (name: string) => {
+    const part = model.getObjectByName(name);
+    expect(part).toBeDefined();
+    return new THREE.Box3().setFromObject(part);
+  };
+  const seat = bounds('throne-seat');
+  const back = bounds('throne-backrest');
+  const crown = bounds('throne-crown');
+  expect(back.max.y).toBeGreaterThan(seat.max.y);
+  expect(seat.max.z).toBeGreaterThan(back.max.z);
+  expect(crown.max.y).toBeGreaterThan(back.max.y);
+});
+
 test('every starting surface entity has visible geometry', () => {
   const sim = controlledColony();
   const renderer = sceneRenderer();

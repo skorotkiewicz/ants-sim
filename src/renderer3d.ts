@@ -250,7 +250,7 @@ export class Renderer3D {
     this.syncSurfaceEntities(sim);
 
     // Sync Colony Objects
-    this.syncColonyObjects(sim);
+    this.syncColonyObjects(sim, dt);
 
     // Sync Brood (Eggs & Larvae)
     this.syncBrood(sim);
@@ -490,13 +490,15 @@ export class Renderer3D {
   // 3D COLONY OBJECTS (FURNITURE)
   // ==========================================
 
-  private syncColonyObjects(sim: Simulation) {
+  private syncColonyObjects(sim: Simulation, dt: number = 0) {
     this.pruneModels(this.objectMeshes, sim.colonyObjects);
     sim.colonyObjects.forEach(obj => {
       if (!this.objectMeshes.has(obj.id)) {
         const group = new THREE.Group();
-        const addPart = (geometry: THREE.BufferGeometry, color: number, x = 0, y = 0, z = 0) => {
-          const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.7 }));
+        const addPart = (geometry: THREE.BufferGeometry, material: number | THREE.MeshStandardMaterial, x = 0, y = 0, z = 0) => {
+          const mesh = new THREE.Mesh(geometry, typeof material === 'number'
+            ? new THREE.MeshStandardMaterial({ color: material, roughness: 0.7 })
+            : material);
           mesh.position.set(x, y, z);
           mesh.castShadow = true;
           mesh.receiveShadow = true;
@@ -593,32 +595,126 @@ export class Renderer3D {
           sugar.position.y = 5;
           group.add(sugar);
         } else if (obj.type === 'spore_radio') {
-          // Gramophone Box
-          const boxGeo = new THREE.BoxGeometry(24, 20, 20);
-          const boxMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
-          const box = new THREE.Mesh(boxGeo, boxMat);
-          group.add(box);
+          const brass = new THREE.MeshStandardMaterial({ color: 0xd9ae55, metalness: 0.65, roughness: 0.3, side: THREE.DoubleSide });
 
-          // Horn
-          const hornGeo = new THREE.ConeGeometry(12, 20, 16, 1, true);
-          const hornMat = new THREE.MeshStandardMaterial({ color: 0xd4a373, side: THREE.DoubleSide });
-          const horn = new THREE.Mesh(hornGeo, hornMat);
-          horn.rotation.z = -Math.PI / 3;
-          horn.position.set(10, 14, 0);
-          group.add(horn);
+          // Walnut cabinet, stepped trim, feet, and a slatted front grille.
+          addPart(new THREE.BoxGeometry(38, 12, 24), 0x704022, -8, -8, -2);
+          for (const y of [-14, -2]) {
+            addPart(new THREE.BoxGeometry(41, 2, 27), 0xa16b38, -8, y, -2);
+            addPart(new THREE.BoxGeometry(39, 0.6, 0.6), brass, -8, y, 11.6);
+          }
+          for (const x of [-23, 7]) {
+            for (const z of [-10, 7]) addPart(new THREE.SphereGeometry(2, 8, 6), 0x482919, x, -15, z);
+          }
+          addPart(new THREE.BoxGeometry(20, 7, 1), 0x291b13, -12, -8, 10.5);
+          for (const y of [-10, -8, -6]) {
+            addPart(new THREE.BoxGeometry(18, 0.7, 1), brass, -12, y, 11.2);
+          }
+          const knob = addPart(new THREE.CylinderGeometry(2, 2, 2, 12), brass, 4, -9, 11);
+          knob.rotation.x = Math.PI / 2;
+          const light = addPart(new THREE.SphereGeometry(1.2, 8, 6), 0x74c98b, 4, -5, 11.5);
+          light.name = 'radio-light';
+          light.material.emissive.setHex(0x74c98b);
+
+          // Vinyl, label, spindle, and an offset mark that makes rotation visible.
+          addPart(new THREE.CylinderGeometry(11.5, 11.5, 1.5, 32), brass, -10, 0, 0);
+          const record = addPart(new THREE.CylinderGeometry(11, 11, 0.6, 32), 0x171a18, -10, 1, 0);
+          record.name = 'radio-record';
+          const label = new THREE.Mesh(new THREE.CylinderGeometry(3, 3, 0.2, 20), new THREE.MeshStandardMaterial({ color: 0xe9d49a }));
+          label.position.y = 0.4;
+          record.add(label);
+          const mark = new THREE.Mesh(new THREE.BoxGeometry(3, 0.2, 0.7), brass);
+          mark.position.set(7, 0.4, 0);
+          record.add(mark);
+          addPart(new THREE.CylinderGeometry(0.6, 0.6, 1.5, 8), brass, -10, 1.8, 0);
+          const tonearm = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(5, -1, -8), new THREE.Vector3(4, 4, -7),
+            new THREE.Vector3(-2, 4, 1), new THREE.Vector3(-3, 2.2, 4),
+          ]);
+          addPart(new THREE.TubeGeometry(tonearm, 16, 0.7, 6, false), brass);
+          addPart(new THREE.BoxGeometry(2, 1, 2), 0x482919, -3, 2.2, 4);
+
+          // A connected, flared bell aimed toward the viewer, not an inverted cone.
+          const throat = new THREE.Vector3(18, 4, -4);
+          const pipe = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(7, -1, -9), new THREE.Vector3(13, 1, -9), throat,
+          ]);
+          addPart(new THREE.TubeGeometry(pipe, 16, 1.6, 8, false), brass);
+          const direction = new THREE.Vector3(-0.45, 0.3, 1).normalize();
+          const horn = addPart(new THREE.LatheGeometry([
+            new THREE.Vector2(1.6, 0), new THREE.Vector2(2.2, 3),
+            new THREE.Vector2(4.5, 7), new THREE.Vector2(7, 10), new THREE.Vector2(10, 12),
+          ], 32), brass, throat.x, throat.y, throat.z);
+          horn.name = 'radio-horn';
+          horn.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+          const mouth = throat.clone().addScaledVector(direction, 12);
+          const rim = addPart(new THREE.TorusGeometry(10, 0.8, 8, 32), brass, mouth.x, mouth.y, mouth.z);
+          rim.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), direction);
         } else if (obj.type === 'queen_throne') {
-          // Royal Velvet Cushion & Gold Crest
-          const throneGeo = new THREE.BoxGeometry(obj.width, obj.height, 24);
-          const throneMat = new THREE.MeshStandardMaterial({ color: 0xb7094c, roughness: 0.4 });
-          const throne = new THREE.Mesh(throneGeo, throneMat);
-          group.add(throne);
+          const gold = new THREE.MeshStandardMaterial({ color: 0xd9ae55, metalness: 0.6, roughness: 0.32 });
+          const velvet = new THREE.MeshStandardMaterial({ color: 0x9f2936, roughness: 0.95 });
 
-          // Golden Crown Ornament
-          const crownGeo = new THREE.ConeGeometry(10, 14, 5);
-          const crownMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.2 });
-          const crown = new THREE.Mesh(crownGeo, crownMat);
-          crown.position.y = obj.height / 2 + 7;
-          group.add(crown);
+          // Two shallow steps and four legs leave open space under the seat.
+          addPart(new THREE.BoxGeometry(84, 5, 32), 0x73462a, 0, -29);
+          addPart(new THREE.BoxGeometry(74, 4, 28), gold, 0, -24.5);
+          for (const x of [-28, 28]) {
+            for (const z of [-10, 10]) {
+              addPart(new THREE.CylinderGeometry(2.5, 4, 13, 10), gold, x, -17, z);
+            }
+          }
+          addPart(new THREE.BoxGeometry(64, 5, 26), gold, 0, -11);
+          const seat = addPart(new THREE.SphereGeometry(1, 24, 12), velvet, 0, -6, 1);
+          seat.scale.set(29, 4, 12);
+          seat.name = 'throne-seat';
+
+          // Arched wood-and-gold frame with a separate padded backrest.
+          const frame = new THREE.Shape();
+          frame.moveTo(-27, -12);
+          frame.lineTo(27, -12);
+          frame.lineTo(27, 9);
+          frame.quadraticCurveTo(27, 26, 0, 27);
+          frame.quadraticCurveTo(-27, 26, -27, 9);
+          frame.closePath();
+          addPart(new THREE.ExtrudeGeometry(frame, {
+            depth: 4, bevelEnabled: true, bevelThickness: 1, bevelSize: 1, bevelSegments: 2,
+          }), gold, 0, 0, -14);
+          const padding = new THREE.Shape();
+          padding.moveTo(-22, -8);
+          padding.lineTo(22, -8);
+          padding.lineTo(22, 9);
+          padding.quadraticCurveTo(22, 21, 0, 22);
+          padding.quadraticCurveTo(-22, 21, -22, 9);
+          padding.closePath();
+          const back = addPart(new THREE.ExtrudeGeometry(padding, {
+            depth: 2, bevelEnabled: true, bevelThickness: 1.2, bevelSize: 1.5, bevelSegments: 3,
+          }), velvet, 0, 0, -9);
+          back.name = 'throne-backrest';
+          for (const x of [-12, 0, 12]) {
+            addPart(new THREE.SphereGeometry(1.1, 8, 6), gold, x, x === 0 ? 13 : 5, -5.5);
+          }
+
+          // Padded armrests, front posts, and rounded sap finials.
+          for (const x of [-32, 32]) {
+            addPart(new THREE.CylinderGeometry(2, 3, 14, 10), gold, x, -6, 10);
+            const rail = addPart(new THREE.CylinderGeometry(2.5, 2.5, 25, 12), gold, x, 1, 0);
+            rail.rotation.x = Math.PI / 2;
+            const arm = addPart(new THREE.SphereGeometry(1, 12, 8), velvet, x, 3, 0);
+            arm.scale.set(3, 2.5, 10);
+            addPart(new THREE.SphereGeometry(3.5, 12, 8), gold, x, 3, 12);
+          }
+
+          // A five-point crown, rather than a cone perched on a block.
+          const crest = new THREE.Shape();
+          crest.moveTo(-10, 0);
+          for (const [x, y] of [[-12, 9], [-7, 5], [-6, 11], [-3, 7], [0, 14], [3, 7], [6, 11], [7, 5], [12, 9], [10, 0]]) {
+            crest.lineTo(x, y);
+          }
+          crest.closePath();
+          const crown = addPart(new THREE.ExtrudeGeometry(crest, {
+            depth: 2, bevelEnabled: true, bevelThickness: 0.5, bevelSize: 0.5, bevelSegments: 1,
+          }), gold, 0, 22, -8);
+          crown.name = 'throne-crown';
+          addPart(new THREE.OctahedronGeometry(3), 0x36a07a, 0, 26, -4);
         } else if (obj.type === 'biolum_shroom') {
           // Glowing Mushroom
           const stemGeo = new THREE.CylinderGeometry(3, 4, 18);
@@ -645,6 +741,13 @@ export class Renderer3D {
         group.position.set(obj.x + obj.width / 2, -(obj.y + obj.height / 2), obj.z);
         this.scene.add(group);
         this.objectMeshes.set(obj.id, group);
+      }
+      if (obj.type === 'spore_radio') {
+        const model = this.objectMeshes.get(obj.id)!;
+        const record = model.getObjectByName('radio-record')!;
+        if (obj.stateValue === 1 && sim.state.timeScale > 0) record.rotation.y += dt * 2;
+        const light = model.getObjectByName('radio-light') as THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>;
+        light.material.emissiveIntensity = obj.stateValue === 1 ? 0.8 : 0;
       }
     });
   }
