@@ -36,14 +36,6 @@ body, html {
   cursor: default;
 }
 
-#game-canvas.tool-dig {
-  cursor: crosshair;
-}
-
-#game-canvas.tool-buy {
-  cursor: copy;
-}
-
 /* TOP STATUS BAR */
 .top-bar {
   position: absolute;
@@ -152,11 +144,46 @@ body, html {
   transition: width 0.1s linear;
 }
 
-/* TOP RIGHT CONTROLS */
+/* CAMERA PRESETS PANEL */
+.camera-presets-panel {
+  display: flex;
+  gap: 6px;
+  background: rgba(14, 34, 62, 0.85);
+  border: 1px solid #4a77ad;
+  border-radius: 20px;
+  padding: 4px 8px;
+  pointer-events: auto;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.cam-preset-btn {
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #a4c5ea;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cam-preset-btn:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.1);
+}
+
+.cam-preset-btn.active {
+  background: linear-gradient(180deg, #2b67ad 0%, #163e72 100%);
+  border-color: #88baee;
+  color: #fff;
+}
+
+/* TOP RIGHT PANEL */
 .top-right-panel {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   pointer-events: auto;
 }
 
@@ -268,12 +295,6 @@ body, html {
   background: #1ce35d;
   clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
   box-shadow: 0 0 6px #1ce35d;
-  animation: plumbobFloat 2s infinite ease-in-out;
-}
-
-@keyframes plumbobFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
 }
 
 .portrait-canvas {
@@ -446,7 +467,7 @@ body, html {
 .console-right {
   display: flex;
   flex-direction: column;
-  width: 440px;
+  width: 450px;
   gap: 6px;
 }
 
@@ -491,7 +512,7 @@ body, html {
   position: relative;
 }
 
-/* TAB 1: MOTIVES GRID */
+/* TAB 1: MOTIVES */
 .motives-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -728,19 +749,31 @@ body, html {
   color: #ffd700;
 }
 
-/* TAB 4: PERSONALITY */
-.personality-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px 14px;
-  padding-top: 4px;
+/* TAB 4: BIO & SKILLS */
+.bio-skills-container {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.bio-skills-wrapper {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+}
+
+.traits-col {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 140px;
 }
 
 .personality-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .personality-pips {
@@ -749,8 +782,8 @@ body, html {
 }
 
 .personality-pip {
-  width: 7px;
-  height: 10px;
+  width: 6px;
+  height: 8px;
   background: #142a45;
   border: 1px solid #3d6391;
   border-radius: 1px;
@@ -761,8 +794,68 @@ body, html {
   box-shadow: 0 0 3px #5097ea;
 }
 
+.skills-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 130px;
+  font-size: 10px;
+}
+
+.skills-col .sub-title, .memories-col .sub-title {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #79abeb;
+  border-bottom: 1px solid #3d6391;
+  margin-bottom: 2px;
+}
+
+.skill-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.memories-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.memories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+  max-height: 95px;
+}
+
+.mem-badge {
+  font-size: 9px;
+  background: rgba(16, 36, 62, 0.8);
+  border: 1px solid #4f79ab;
+  border-radius: 4px;
+  padding: 2px 4px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mem-badge.pos {
+  border-color: #37e36c;
+}
+
+.mem-badge.neg {
+  border-color: #ff4d4d;
+}
+
 /* ========================================================
-   RADIAL PIE MENU (THE SIMS 2 INTERACTION MENU)
+   RADIAL PIE MENU
    ======================================================== */
 .pie-menu-container {
   position: absolute;
@@ -927,6 +1020,287 @@ body, html {
   font-size: 11px;
   font-weight: 800;
   color: #ffd700;
+}
+
+/* ========================================================
+   MODAL DIALOGS (OPTIONS & CAS STUDIO)
+   ======================================================== */
+.modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(5, 12, 22, 0.7);
+  backdrop-filter: blur(4px);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-window {
+  width: 520px;
+  background: linear-gradient(180deg, #1f4675 0%, #122949 100%);
+  border: 3px solid #6b9bd6;
+  border-radius: 12px;
+  box-shadow: 0 12px 35px rgba(0, 0, 0, 0.8), inset 0 1px 2px rgba(255, 255, 255, 0.4);
+  color: #fff;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-header {
+  padding: 10px 16px;
+  background: linear-gradient(180deg, #2b61a1 0%, #173b67 100%);
+  border-bottom: 2px solid #5587c4;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffd700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.modal-close {
+  width: 26px;
+  height: 26px;
+  background: #c72b2b;
+  border: 1px solid #fff;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.modal-section {
+  background: rgba(10, 24, 45, 0.6);
+  border: 1px solid #3d6391;
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #88baee;
+  text-transform: uppercase;
+  border-bottom: 1px solid #3d6391;
+  padding-bottom: 4px;
+}
+
+.save-slots-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.save-slot-box {
+  background: #112847;
+  border: 1px solid #4f79ab;
+  border-radius: 6px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.slot-name {
+  font-size: 11px;
+  font-weight: bold;
+}
+
+.slot-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.btn-sims {
+  padding: 5px 12px;
+  border-radius: 6px;
+  background: linear-gradient(180deg, #2b61a1 0%, #173b67 100%);
+  border: 1px solid #6b9bd6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-sims:hover {
+  background: linear-gradient(180deg, #3773bd 0%, #1d4a82 100%);
+  border-color: #ffd700;
+}
+
+.btn-sims.secondary {
+  background: #153258;
+}
+
+.btn-sims.danger {
+  background: #a82424;
+  border-color: #e04b4b;
+}
+
+.btn-sims.primary {
+  background: linear-gradient(180deg, #2ea44f 0%, #166e30 100%);
+  border-color: #4cdb76;
+}
+
+.file-io-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.sims-select, .sims-input {
+  background: #102542;
+  border: 1px solid #4a77ad;
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  outline: none;
+}
+
+.sims-slider {
+  accent-color: #ffd700;
+  width: 140px;
+}
+
+/* CAS WINDOW */
+.cas-window {
+  width: 580px;
+}
+
+.cas-body {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+}
+
+.cas-left-col {
+  width: 190px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.cas-preview-box {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #386ca8 0%, #142e50 100%);
+  border: 4px solid #8cb6eb;
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.color-picker-row {
+  display: flex;
+  gap: 6px;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.color-swatch.active {
+  transform: scale(1.25);
+  box-shadow: 0 0 8px #ffd700;
+  border-color: #ffd700;
+}
+
+.cas-right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.personality-builder {
+  background: rgba(10, 24, 45, 0.6);
+  border: 1px solid #3d6391;
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cas-points-title {
+  font-size: 11px;
+  font-weight: bold;
+  color: #ffd700;
+}
+
+.cas-trait-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.step-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: #234d82;
+  border: 1px solid #5a8ec9;
+  color: #fff;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.full-width {
+  width: 100%;
+  margin-top: 6px;
 }
 
 /* NOTIFICATIONS */
