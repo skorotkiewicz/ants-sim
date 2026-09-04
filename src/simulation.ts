@@ -11,7 +11,6 @@ import {
 } from './types';
 import type {
   AntAccessoryType,
-  AntMemory,
   AntSim,
   AntSkills,
   AspirationType,

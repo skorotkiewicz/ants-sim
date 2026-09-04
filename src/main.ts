@@ -1,11 +1,11 @@
 // ==========================================
 // THE SIMS 2: ANT COLONY (THE SIMANTS 2)
-// Game Entry Point & Controller Loop
+// Game Entry Point, 3D WebGL Engine & Input Loop
 // ==========================================
 
 import './style.css';
 import { Simulation } from './simulation';
-import { Renderer } from './renderer';
+import { Renderer3D } from './renderer3d';
 import { UIManager } from './ui';
 import { audio } from './audio';
 import { GRID_COLS, GRID_ROWS, SURFACE_ROW, TILE_SIZE } from './types';
@@ -13,14 +13,17 @@ import type { AntSim } from './types';
 
 class GameApp {
   private sim: Simulation;
-  private renderer: Renderer;
+  private renderer: Renderer3D;
   private ui: UIManager;
 
   private isDraggingCamera: boolean = false;
+  private isOrbiting: boolean = false;
   private dragStartX: number = 0;
   private dragStartY: number = 0;
-  private cameraStartX: number = 0;
-  private cameraStartY: number = 0;
+  private targetStartX: number = 0;
+  private targetStartY: number = 0;
+  private angleStartX: number = 0;
+  private angleStartY: number = 0;
   private hasDragged: boolean = false;
 
   private lastTime: number = 0;
@@ -32,16 +35,15 @@ class GameApp {
     this.ui = new UIManager(this.sim, appEl);
 
     const canvas = document.getElementById('game-canvas') as HTMLCanvasElement;
-    this.renderer = new Renderer(canvas);
+    this.renderer = new Renderer3D(canvas);
+    this.ui.setRenderer(this.renderer);
 
     this.setupWindowEvents();
     this.setupCanvasInputs(canvas);
     this.setupKeyboard();
 
-    // Resize canvas to full window
     this.onResize();
 
-    // Start Main Game Loop
     this.lastTime = performance.now();
     requestAnimationFrame(this.gameLoop.bind(this));
   }
@@ -53,7 +55,6 @@ class GameApp {
   private setupWindowEvents() {
     window.addEventListener('resize', () => this.onResize());
 
-    // First user gesture starts Web Audio & procedural lounge jazz
     const unlockAudio = () => {
       audio.ensureContext();
       audio.startMusic();
@@ -78,12 +79,16 @@ class GameApp {
       } else if (e.code === 'Digit3') {
         this.ui.setTimeScale(4);
       } else if (e.code === 'Tab') {
-        // Cycle selected ant
         e.preventDefault();
         this.cycleSelectedAnt();
       } else if (e.code === 'KeyM') {
         const isMuted = audio.toggleMute();
         this.ui.showNotification(isMuted ? 'Muted' : 'Audio On');
+      } else if (e.code === 'F5' || e.code === 'Escape') {
+        e.preventDefault();
+        const modal = document.getElementById('options-modal')!;
+        modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
+        audio.playClick();
       }
     });
 
@@ -98,94 +103,102 @@ class GameApp {
     const nextIdx = (currentIdx + 1) % this.sim.ants.length;
     const nextAnt = this.sim.ants[nextIdx];
     this.sim.selectedAntId = nextAnt.id;
-    this.renderer.cameraX = nextAnt.x;
-    this.renderer.cameraY = nextAnt.y;
+    this.renderer.targetPos.set(nextAnt.x, -nextAnt.y, nextAnt.z);
     audio.playPlumbobSelect();
   }
 
   private setupCanvasInputs(canvas: HTMLCanvasElement) {
-    // Mouse Down (Start Pan or Click)
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
     canvas.addEventListener('mousedown', e => {
       if (this.ui.pieMenuVisible) {
         this.ui.hidePieMenu();
       }
 
-      this.isDraggingCamera = true;
       this.hasDragged = false;
       this.dragStartX = e.clientX;
       this.dragStartY = e.clientY;
-      this.cameraStartX = this.renderer.cameraX;
-      this.cameraStartY = this.renderer.cameraY;
+
+      if (e.button === 2 || e.altKey) {
+        // Orbit Camera
+        this.isOrbiting = true;
+        this.angleStartX = this.renderer.cameraAngleX;
+        this.angleStartY = this.renderer.cameraAngleY;
+      } else {
+        // Pan Camera
+        this.isDraggingCamera = true;
+        this.targetStartX = this.renderer.targetPos.x;
+        this.targetStartY = this.renderer.targetPos.y;
+      }
     });
 
-    // Mouse Move (Pan Camera or Highlight Tile)
     window.addEventListener('mousemove', e => {
-      if (this.isDraggingCamera) {
-        const dx = (e.clientX - this.dragStartX) / this.renderer.zoom;
-        const dy = (e.clientY - this.dragStartY) / this.renderer.zoom;
-        if (Math.hypot(dx, dy) > 5) {
-          this.hasDragged = true;
-          this.renderer.cameraX = this.cameraStartX - dx;
-          this.renderer.cameraY = this.cameraStartY - dy;
+      const dx = e.clientX - this.dragStartX;
+      const dy = e.clientY - this.dragStartY;
+
+      if (Math.hypot(dx, dy) > 5) {
+        this.hasDragged = true;
+      }
+
+      if (this.isOrbiting) {
+        this.renderer.cameraAngleX = this.angleStartX - dx * 0.005;
+        this.renderer.cameraAngleY = Math.max(0.02, Math.min(1.4, this.angleStartY + dy * 0.005));
+      } else if (this.isDraggingCamera) {
+        const factor = this.renderer.cameraDistance * 0.0015;
+        this.renderer.targetPos.x = this.targetStartX - dx * factor;
+        this.renderer.targetPos.y = this.targetStartY + dy * factor;
+      }
+
+      // Highlight Tile under Cursor
+      const hit = this.renderer.raycast(e.clientX, e.clientY);
+      if (hit) {
+        const col = Math.floor(hit.point.x / TILE_SIZE);
+        const row = Math.floor(-hit.point.y / TILE_SIZE);
+        if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
+          this.sim.highlightedTile = { col, row };
+        } else {
+          this.sim.highlightedTile = null;
         }
       }
-
-      // Update Highlight Tile
-      const rect = canvas.getBoundingClientRect();
-      const worldPos = this.screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-      const col = Math.floor(worldPos.x / TILE_SIZE);
-      const row = Math.floor(worldPos.y / TILE_SIZE);
-
-      if (col >= 0 && col < GRID_COLS && row >= 0 && row < GRID_ROWS) {
-        this.sim.highlightedTile = { col, row };
-      } else {
-        this.sim.highlightedTile = null;
-      }
     });
 
-    // Mouse Up (Click Interaction)
     window.addEventListener('mouseup', e => {
+      if (this.isOrbiting) {
+        this.isOrbiting = false;
+      }
+
       if (this.isDraggingCamera) {
         this.isDraggingCamera = false;
-        if (!this.hasDragged) {
-          // It was a click!
-          const rect = canvas.getBoundingClientRect();
-          const clickX = e.clientX - rect.left;
-          const clickY = e.clientY - rect.top;
-          this.handleCanvasClick(clickX, clickY, e.clientX, e.clientY);
+        if (!this.hasDragged && e.button === 0) {
+          this.handleCanvasClick(e.clientX, e.clientY);
         }
       }
     });
 
-    // Mouse Wheel (Smooth Zoom)
     canvas.addEventListener(
       'wheel',
       e => {
         e.preventDefault();
-        const zoomDelta = e.deltaY < 0 ? 1.12 : 0.89;
-        this.renderer.zoom = Math.max(0.45, Math.min(2.5, this.renderer.zoom * zoomDelta));
+        const zoomDelta = e.deltaY < 0 ? 0.9 : 1.1;
+        this.renderer.cameraDistance = Math.max(150, Math.min(1600, this.renderer.cameraDistance * zoomDelta));
       },
       { passive: false }
     );
-  }
-
-  // Convert Screen pixel coordinates to Simulation World coordinates
-  private screenToWorld(sx: number, sy: number): { x: number; y: number } {
-    const w = this.renderer.canvas.width;
-    const h = this.renderer.canvas.height;
-    const wx = (sx - w / 2) / this.renderer.zoom + this.renderer.cameraX;
-    const wy = (sy - h / 2) / this.renderer.zoom + this.renderer.cameraY;
-    return { x: wx, y: wy };
   }
 
   // ==========================================
   // CLICK INTERACTION DISPATCHER
   // ==========================================
 
-  private handleCanvasClick(screenX: number, screenY: number, clientX: number, clientY: number) {
-    const worldPos = this.screenToWorld(screenX, screenY);
-    const col = Math.floor(worldPos.x / TILE_SIZE);
-    const row = Math.floor(worldPos.y / TILE_SIZE);
+  private handleCanvasClick(clientX: number, clientY: number) {
+    const hit = this.renderer.raycast(clientX, clientY);
+    if (!hit) return;
+
+    const worldX = hit.point.x;
+    const worldY = -hit.point.y;
+
+    const col = Math.floor(worldX / TILE_SIZE);
+    const row = Math.floor(worldY / TILE_SIZE);
 
     // BUILD MODE
     if (this.ui.activeMode === 'Build') {
@@ -212,52 +225,50 @@ class GameApp {
       return;
     }
 
-    // LIVE MODE: Click ants, entities, objects, or floor
+    // LIVE MODE
     const sel = this.sim.getSelectedAnt();
 
     // 1. Check Ant Click
-    const clickedAnt = this.sim.ants.find(a => Math.hypot(a.x - worldPos.x, a.y - worldPos.y) < 22 * a.scale);
+    const clickedAnt = this.sim.ants.find(a => Math.hypot(a.x - worldX, a.y - worldY) < 26 * a.scale);
     if (clickedAnt) {
       if (!sel || sel.id === clickedAnt.id) {
-        // Select this ant!
         this.sim.selectedAntId = clickedAnt.id;
         audio.playPlumbobSelect();
         audio.playSimlish('chat');
         return;
       } else {
-        // Clicked another ant with active ant selected -> Open Radial Pie Menu!
         this.openAntPieMenu(sel, clickedAnt, clientX, clientY);
         return;
       }
     }
 
     // 2. Check Brood (Larva / Egg) Click
-    const clickedBrood = this.sim.brood.find(b => Math.hypot(b.x - worldPos.x, b.y - worldPos.y) < 18);
+    const clickedBrood = this.sim.brood.find(b => Math.hypot(b.x - worldX, b.y - worldY) < 22);
     if (clickedBrood && sel) {
       this.openBroodPieMenu(sel, clickedBrood, clientX, clientY);
       return;
     }
 
-    // 3. Check Colony Objects (Furniture / Radio / Bed)
+    // 3. Check Colony Objects
     const clickedObj = this.sim.colonyObjects.find(
       o =>
-        worldPos.x >= o.x &&
-        worldPos.x <= o.x + o.width &&
-        worldPos.y >= o.y &&
-        worldPos.y <= o.y + o.height
+        worldX >= o.x &&
+        worldX <= o.x + o.width &&
+        worldY >= o.y &&
+        worldY <= o.y + o.height
     );
     if (clickedObj && sel) {
       this.openObjectPieMenu(sel, clickedObj, clientX, clientY);
       return;
     }
 
-    // 4. Check Surface Entities (Watermelon, Donut, Aphid)
+    // 4. Check Surface Entities
     const clickedEntity = this.sim.surfaceEntities.find(
       e =>
-        worldPos.x >= e.x &&
-        worldPos.x <= e.x + e.width &&
-        worldPos.y >= e.y &&
-        worldPos.y <= e.y + e.height
+        worldX >= e.x &&
+        worldX <= e.x + e.width &&
+        worldY >= e.y &&
+        worldY <= e.y + e.height
     );
     if (clickedEntity && sel) {
       this.openSurfaceEntityPieMenu(sel, clickedEntity, clientX, clientY);
@@ -269,17 +280,14 @@ class GameApp {
       if (row >= SURFACE_ROW && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
         const tile = this.sim.grid[row][col];
         if (tile.type === 'soil' || tile.type === 'hard_rock') {
-          // Excavate Dirt
           this.sim.executeDigAction(sel, col, row);
         } else {
-          // Walk Here
-          this.sim.queueWalkToCoord(sel, worldPos.x, worldPos.y, () => {
+          this.sim.queueWalkToCoord(sel, worldX, worldY, () => {
             sel.stateText = 'Arrived at destination';
           });
         }
       } else {
-        // Surface walk
-        this.sim.queueWalkToCoord(sel, worldPos.x, worldPos.y, () => {
+        this.sim.queueWalkToCoord(sel, worldX, worldY, () => {
           sel.stateText = 'Arrived at destination';
         });
       }
@@ -606,25 +614,18 @@ class GameApp {
     const dt = Math.min(0.1, (currentTime - this.lastTime) / 1000);
     this.lastTime = currentTime;
 
-    // Keyboard camera panning (WASD / Arrows)
     const panSpeed = 350 * dt;
-    if (this.keysDown.has('KeyA') || this.keysDown.has('ArrowLeft')) this.renderer.cameraX -= panSpeed;
-    if (this.keysDown.has('KeyD') || this.keysDown.has('ArrowRight')) this.renderer.cameraX += panSpeed;
-    if (this.keysDown.has('KeyW') || this.keysDown.has('ArrowUp')) this.renderer.cameraY -= panSpeed;
-    if (this.keysDown.has('KeyS') || this.keysDown.has('ArrowDown')) this.renderer.cameraY += panSpeed;
+    if (this.keysDown.has('KeyA') || this.keysDown.has('ArrowLeft')) this.renderer.targetPos.x -= panSpeed;
+    if (this.keysDown.has('KeyD') || this.keysDown.has('ArrowRight')) this.renderer.targetPos.x += panSpeed;
+    if (this.keysDown.has('KeyW') || this.keysDown.has('ArrowUp')) this.renderer.targetPos.y += panSpeed;
+    if (this.keysDown.has('KeyS') || this.keysDown.has('ArrowDown')) this.renderer.targetPos.y -= panSpeed;
 
-    // Update Simulation
     this.sim.update(dt);
-
-    // Render Canvas World
     this.renderer.render(this.sim, dt);
-
-    // Update UI Console & Tabs
     this.ui.update(dt);
 
     requestAnimationFrame(this.gameLoop.bind(this));
   }
 }
 
-// Start application
 new GameApp();
