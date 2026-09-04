@@ -1,6 +1,6 @@
 // ==========================================
 // THE SIMS 2: ANT COLONY SIMULATION ENGINE
-// World Grid, Ant Autonomy, Brood & Needs
+// World Grid, Autonomy, Save/Load, Skills & CAS
 // ==========================================
 
 import {
@@ -10,13 +10,17 @@ import {
   TILE_SIZE,
 } from './types';
 import type {
+  AntAccessoryType,
+  AntMemory,
   AntSim,
+  AntSkills,
   AspirationType,
   BroodEntity,
   CasteType,
   ColonyObject,
   ColonyState,
   Personality,
+  SaveGameData,
   SurfaceEntity,
   TileType,
   WantFearKey,
@@ -38,15 +42,22 @@ export class Simulation {
   public highlightedTile: { col: number; row: number } | null = null;
 
   private nextId: number = 100;
+  private autoSaveTimer: number = 0;
+  private eventCheckTimer: number = 0;
 
   constructor() {
     this.grid = [];
     this.state = {
-      pollenPoints: 280, // Starting § currency
+      pollenPoints: 280,
       day: 1,
-      timeOfDay: 9.5,   // 9:30 AM
-      timeScale: 1,     // Normal speed
+      timeOfDay: 9.5,
+      timeScale: 1,
       weather: 'Sunny',
+      freeWill: 'High',
+      musicVolume: 0.5,
+      sfxVolume: 0.5,
+      masterVolume: 0.5,
+      radioStation: 'Spore_Jazz',
     };
 
     this.initWorldGrid();
@@ -59,7 +70,7 @@ export class Simulation {
   // INITIALIZATION
   // ==========================================
 
-  private initWorldGrid() {
+  public initWorldGrid() {
     this.grid = [];
     for (let r = 0; r < GRID_ROWS; r++) {
       const row: WorldTile[] = [];
@@ -69,7 +80,6 @@ export class Simulation {
         } else if (r === SURFACE_ROW) {
           row.push({ type: 'grass' });
         } else {
-          // Underground soil with rocks
           const isRock = Math.random() < 0.05 && r > SURFACE_ROW + 3;
           row.push({ type: isRock ? 'hard_rock' : 'soil', wallType: 'dirt' });
         }
@@ -78,23 +88,14 @@ export class Simulation {
     }
 
     // Carve Starting Anthill Chambers:
-    // 1. Entrance Vertical Shaft (x: 24..25, y: 10..15)
     this.carveRect(24, 10, 3, 6, 'tunnel');
-
-    // 2. Central Great Chamber (x: 18..32, y: 15..19)
     this.carveRect(18, 15, 15, 5, 'chamber_floor');
-
-    // 3. Royal Nursery & Queen's Quarters (x: 8..18, y: 19..24)
     this.carveRect(8, 19, 11, 6, 'royal_brick');
-    this.carveRect(18, 20, 2, 2, 'tunnel'); // connecting corridor
-
-    // 4. Fungus Farm Chamber (x: 31..42, y: 19..24)
+    this.carveRect(18, 20, 2, 2, 'tunnel');
     this.carveRect(31, 19, 12, 6, 'fungus_bed');
-    this.carveRect(30, 20, 2, 2, 'tunnel'); // connecting corridor
-
-    // 5. Worker Bunkhouse (x: 18..32, y: 24..28)
+    this.carveRect(30, 20, 2, 2, 'tunnel');
     this.carveRect(18, 24, 15, 5, 'chamber_floor');
-    this.carveRect(24, 19, 3, 6, 'tunnel'); // shaft down to bunkhouse
+    this.carveRect(24, 19, 3, 6, 'tunnel');
   }
 
   public carveRect(startCol: number, startRow: number, width: number, height: number, type: TileType) {
@@ -108,16 +109,17 @@ export class Simulation {
     }
   }
 
-  private initSurfaceEntities() {
-    // Surface picnic & food sources
+  public initSurfaceEntities() {
     this.surfaceEntities = [
       {
         id: 'surf_watermelon',
         type: 'watermelon',
         x: 16 * TILE_SIZE,
         y: (SURFACE_ROW - 1) * TILE_SIZE,
+        z: 0,
         width: 64,
         height: 48,
+        depth: 32,
         resourcesRemaining: 200,
         maxResources: 200,
       },
@@ -126,8 +128,10 @@ export class Simulation {
         type: 'donut',
         x: 29 * TILE_SIZE,
         y: (SURFACE_ROW - 1) * TILE_SIZE,
+        z: 0,
         width: 56,
         height: 44,
+        depth: 32,
         resourcesRemaining: 150,
         maxResources: 150,
       },
@@ -136,8 +140,10 @@ export class Simulation {
         type: 'sugar_pile',
         x: 37 * TILE_SIZE,
         y: (SURFACE_ROW - 1) * TILE_SIZE,
+        z: 0,
         width: 48,
         height: 32,
+        depth: 32,
         resourcesRemaining: 120,
         maxResources: 120,
       },
@@ -146,8 +152,10 @@ export class Simulation {
         type: 'aphid',
         x: 8 * TILE_SIZE,
         y: (SURFACE_ROW - 2) * TILE_SIZE,
+        z: 0,
         width: 32,
         height: 24,
+        depth: 24,
         resourcesRemaining: 50,
         maxResources: 50,
         tamed: false,
@@ -157,8 +165,10 @@ export class Simulation {
         type: 'aphid',
         x: 11 * TILE_SIZE,
         y: (SURFACE_ROW - 2) * TILE_SIZE,
+        z: 0,
         width: 32,
         height: 24,
+        depth: 24,
         resourcesRemaining: 50,
         maxResources: 50,
         tamed: false,
@@ -168,44 +178,49 @@ export class Simulation {
         type: 'flower',
         x: 43 * TILE_SIZE,
         y: (SURFACE_ROW - 3) * TILE_SIZE,
+        z: 0,
         width: 40,
         height: 70,
+        depth: 32,
         resourcesRemaining: 60,
         maxResources: 60,
       },
     ];
   }
 
-  private initColonyObjects() {
+  public initColonyObjects() {
     this.colonyObjects = [
-      // Central Chamber: Sugar Pantry & Radio
       {
         id: 'obj_pantry',
         type: 'sugar_pantry',
         x: 21 * TILE_SIZE,
         y: 18 * TILE_SIZE,
+        z: 0,
         width: 2 * TILE_SIZE,
         height: 1 * TILE_SIZE,
-        stateValue: 24, // 24 initial sugar stored
+        depth: 1 * TILE_SIZE,
+        stateValue: 30,
       },
       {
         id: 'obj_radio',
         type: 'spore_radio',
         x: 27 * TILE_SIZE,
         y: 18 * TILE_SIZE,
+        z: 0,
         width: 2 * TILE_SIZE,
         height: 1 * TILE_SIZE,
-        stateValue: 1, // Radio is ON and rocking
+        depth: 1 * TILE_SIZE,
+        stateValue: 1,
       },
-
-      // Worker Bunkhouse: Leaf Hammocks
       {
         id: 'obj_hammock_1',
         type: 'leaf_hammock',
         x: 19 * TILE_SIZE,
         y: 27 * TILE_SIZE,
+        z: 0,
         width: 2 * TILE_SIZE,
         height: 1 * TILE_SIZE,
+        depth: 1 * TILE_SIZE,
         stateValue: 0,
       },
       {
@@ -213,8 +228,10 @@ export class Simulation {
         type: 'leaf_hammock',
         x: 23 * TILE_SIZE,
         y: 27 * TILE_SIZE,
+        z: 0,
         width: 2 * TILE_SIZE,
         height: 1 * TILE_SIZE,
+        depth: 1 * TILE_SIZE,
         stateValue: 0,
       },
       {
@@ -222,19 +239,21 @@ export class Simulation {
         type: 'moss_mattress',
         x: 27 * TILE_SIZE,
         y: 27 * TILE_SIZE,
+        z: 0,
         width: 2 * TILE_SIZE,
         height: 1 * TILE_SIZE,
+        depth: 1 * TILE_SIZE,
         stateValue: 0,
       },
-
-      // Fungus Chamber: Fungus Bed & Biolum Shroom
       {
         id: 'obj_fungus_1',
         type: 'fungus_garden',
         x: 33 * TILE_SIZE,
         y: 23 * TILE_SIZE,
+        z: 0,
         width: 3 * TILE_SIZE,
         height: 2 * TILE_SIZE,
+        depth: 1 * TILE_SIZE,
         stateValue: 40,
       },
       {
@@ -242,30 +261,32 @@ export class Simulation {
         type: 'biolum_shroom',
         x: 39 * TILE_SIZE,
         y: 23 * TILE_SIZE,
+        z: 0,
         width: 1 * TILE_SIZE,
         height: 1 * TILE_SIZE,
+        depth: 1 * TILE_SIZE,
         stateValue: 1,
       },
-
-      // Royal Nursery: Queen's Throne & Brood Nests
       {
         id: 'obj_throne',
         type: 'queen_throne',
         x: 10 * TILE_SIZE,
         y: 23 * TILE_SIZE,
+        z: 0,
         width: 3 * TILE_SIZE,
         height: 2 * TILE_SIZE,
+        depth: 1 * TILE_SIZE,
         stateValue: 0,
       },
     ];
 
-    // Starting Brood (Eggs & Larvae in Royal Nursery)
     this.brood = [
       {
         id: 'brood_1',
         stage: 'egg',
         x: 14 * TILE_SIZE,
         y: 23.5 * TILE_SIZE,
+        z: 0,
         age: 10,
         growthDuration: 60,
         hunger: 100,
@@ -276,6 +297,7 @@ export class Simulation {
         stage: 'egg',
         x: 15 * TILE_SIZE,
         y: 23.5 * TILE_SIZE,
+        z: 0,
         age: 35,
         growthDuration: 60,
         hunger: 100,
@@ -286,6 +308,7 @@ export class Simulation {
         stage: 'larva',
         x: 16 * TILE_SIZE,
         y: 23.5 * TILE_SIZE,
+        z: 0,
         age: 20,
         growthDuration: 75,
         hunger: 65,
@@ -294,51 +317,56 @@ export class Simulation {
     ];
   }
 
-  private initStartingAnts() {
-    // 1. Her Majesty Queen Formica
+  public initStartingAnts() {
     const queen: AntSim = this.createAnt('Queen Ant-oinette IV', 'Queen', 'Matriarch of the Hill', '#9a244a', 1.5, {
       x: 11 * TILE_SIZE,
       y: 23 * TILE_SIZE,
+      z: 0,
       aspiration: 'Brood',
       personality: { neat: 8, outgoing: 6, active: 4, playful: 3, nice: 7 },
+      accessory: 'crown',
     });
 
-    // 2. Minor Worker - Ant-thony
     const worker1: AntSim = this.createAnt('Ant-thony', 'Worker', 'Lead Excavator', '#a85a2b', 1.0, {
       x: 20 * TILE_SIZE,
       y: 18 * TILE_SIZE,
+      z: 0,
       aspiration: 'Fortune',
       personality: { neat: 9, outgoing: 5, active: 9, playful: 6, nice: 8 },
+      accessory: 'hardhat',
     });
 
-    // 3. Nurse - Florence
     const nurse: AntSim = this.createAnt('Florence', 'Nurse', 'Chief Brood Caretaker', '#c87834', 1.05, {
       x: 15 * TILE_SIZE,
       y: 23 * TILE_SIZE,
+      z: 0,
       aspiration: 'Brood',
       personality: { neat: 10, outgoing: 8, active: 6, playful: 5, nice: 10 },
+      accessory: 'nurse_cap',
     });
 
-    // 4. Soldier - Major Pincer
     const soldier: AntSim = this.createAnt('Major Pincer', 'Soldier', 'Colony Defender', '#5c3318', 1.3, {
       x: 24 * TILE_SIZE,
       y: 13 * TILE_SIZE,
+      z: 0,
       aspiration: 'Popularity',
       personality: { neat: 4, outgoing: 7, active: 9, playful: 8, nice: 6 },
+      accessory: 'helmet',
     });
 
-    // 5. Forager - Scout Chirp
     const forager: AntSim = this.createAnt('Scout Chirp', 'Forager', 'Surface Pathfinder', '#d17b38', 0.95, {
       x: 22 * TILE_SIZE,
       y: 9 * TILE_SIZE,
+      z: 0,
       aspiration: 'Pleasure',
       personality: { neat: 5, outgoing: 9, active: 10, playful: 9, nice: 7 },
+      accessory: 'goggles',
     });
 
     this.ants = [queen, worker1, nurse, soldier, forager];
     this.selectedAntId = worker1.id;
 
-    // Seed mutual friendly relationships
+    // Seed mutual friendly relationships & memories
     this.ants.forEach(a => {
       this.ants.forEach(b => {
         if (a.id !== b.id) {
@@ -349,8 +377,20 @@ export class Simulation {
           };
         }
       });
+      a.memories.push({
+        id: `mem_start_${Math.random()}`,
+        title: 'Founded the Colony',
+        description: 'Joined the Great Anthill under Her Royal Majesty.',
+        icon: '👑',
+        isPositive: true,
+        day: 1,
+      });
     });
   }
+
+  // ==========================================
+  // CREATE-AN-ANT (CAS STUDIO SYSTEM)
+  // ==========================================
 
   public createAnt(
     name: string,
@@ -361,8 +401,11 @@ export class Simulation {
     options: {
       x: number;
       y: number;
+      z?: number;
       aspiration: AspirationType;
       personality: Personality;
+      accessory?: AntAccessoryType;
+      skills?: Partial<AntSkills>;
     }
   ): AntSim {
     const id = `ant_${++this.nextId}`;
@@ -372,9 +415,10 @@ export class Simulation {
       title,
       caste,
       color,
+      accessory: options.accessory || 'none',
       scale,
       aspiration: options.aspiration,
-      aspirationScore: 3500, // starts in Gold / high Green
+      aspirationScore: 3500,
       aspirationLevel: 'Gold',
       personality: options.personality,
       motives: {
@@ -385,6 +429,14 @@ export class Simulation {
         fun: 70 + Math.random() * 25,
         colonyDuty: 80 + Math.random() * 15,
       },
+      skills: {
+        digging: options.skills?.digging || (caste === 'Worker' ? 4 : 1),
+        foraging: options.skills?.foraging || (caste === 'Forager' ? 4 : 1),
+        nursing: options.skills?.nursing || (caste === 'Nurse' ? 4 : 1),
+        combat: options.skills?.combat || (caste === 'Soldier' ? 4 : 1),
+        charisma: options.skills?.charisma || (caste === 'Queen' ? 5 : 2),
+      },
+      memories: [],
       wants: [],
       fears: [],
       relationships: {},
@@ -392,8 +444,10 @@ export class Simulation {
       actionQueue: [],
       x: options.x,
       y: options.y,
+      z: options.z || 0,
       vx: 0,
       vy: 0,
+      vz: 0,
       facing: 1,
       walkCycle: 0,
       antennaTwitch: 0,
@@ -409,8 +463,20 @@ export class Simulation {
     return ant;
   }
 
+  public addMemory(ant: AntSim, title: string, description: string, icon: string, isPositive: boolean = true) {
+    ant.memories.unshift({
+      id: `mem_${Date.now()}_${Math.random()}`,
+      title,
+      description,
+      icon,
+      isPositive,
+      day: this.state.day,
+    });
+    if (ant.memories.length > 20) ant.memories.pop();
+  }
+
   // ==========================================
-  // WANTS & FEARS ENGINE (THE SIMS 2 CORE)
+  // WANTS & FEARS ENGINE
   // ==========================================
 
   public rollWantsAndFears(ant: AntSim) {
@@ -540,11 +606,9 @@ export class Simulation {
       },
     ];
 
-    // Pick 4 unique wants matching aspiration preference
     const shuffledWants = [...possibleWants].sort(() => Math.random() - 0.5);
     ant.wants = shuffledWants.slice(0, 4);
 
-    // Pick 3 fears
     const shuffledFears = [...possibleFears].sort(() => Math.random() - 0.5);
     ant.fears = shuffledFears.slice(0, 3);
   }
@@ -554,12 +618,12 @@ export class Simulation {
     if (wantIdx !== -1) {
       const want = ant.wants[wantIdx];
       ant.aspirationScore += want.points;
-      this.state.pollenPoints += Math.floor(want.points / 50); // bonus §
+      this.state.pollenPoints += Math.floor(want.points / 50);
 
+      this.addMemory(ant, `Fulfilled Want: ${want.name}`, want.description, want.icon, true);
       audio.playWantFulfilled();
       this.showBubble(ant, want.icon, false, 3.0);
 
-      // Re-roll this slot
       this.rollWantsAndFears(ant);
       this.updateAspirationLevel(ant);
     }
@@ -569,7 +633,8 @@ export class Simulation {
     const fearIdx = ant.fears.findIndex(f => f.key === key);
     if (fearIdx !== -1) {
       const fear = ant.fears[fearIdx];
-      ant.aspirationScore += fear.points; // points are negative
+      ant.aspirationScore += fear.points;
+      this.addMemory(ant, `Suffered Fear: ${fear.name}`, fear.description, fear.icon, false);
       audio.playFearTriggered();
       this.showBubble(ant, '💔', true, 3.5);
 
@@ -590,18 +655,14 @@ export class Simulation {
       ant.aspirationLevel = 'Red';
     } else {
       ant.aspirationLevel = 'Failure';
-      // The Social Ant Shrink descends!
       if (!ant.failurePsychiatrist) {
         ant.failurePsychiatrist = true;
         this.showBubble(ant, '🩺', true, 5.0);
         ant.stateText = 'Aspiration Failure! Receiving therapy...';
+        this.addMemory(ant, 'Aspiration Breakdown', 'Suffered total nervous collapse. Visited by Dr. Feelgood.', '🩺', false);
       }
     }
   }
-
-  // ==========================================
-  // SPEECH & THOUGHT BUBBLES
-  // ==========================================
 
   public showBubble(ant: AntSim, icon: string, isThought: boolean = false, duration: number = 2.5) {
     ant.bubble = {
@@ -616,34 +677,65 @@ export class Simulation {
   // ==========================================
 
   public update(dt: number) {
-    if (this.state.timeScale === 0) return; // Paused
+    if (this.state.timeScale === 0) return;
 
     const scaledDt = dt * this.state.timeScale;
 
-    // Advance World Clock
     this.advanceClock(scaledDt);
-
-    // Update Brood Lifecycle
     this.updateBrood(scaledDt);
-
-    // Update Colony Objects (Radio music, Fungus growth, Aphids)
     this.updateObjects(scaledDt);
 
-    // Update Ants (Needs, AI, Movement, Queues)
     for (const ant of this.ants) {
       this.updateAnt(ant, scaledDt);
     }
 
-    // Queen Reproduction
     this.updateQueenEggLaying(scaledDt);
+
+    // Auto-Save check (every 180s)
+    this.autoSaveTimer += dt;
+    if (this.autoSaveTimer >= 180) {
+      this.autoSaveTimer = 0;
+      this.saveToLocalStorage('auto');
+    }
+
+    // Dynamic Colony Events check (every 60s)
+    this.eventCheckTimer += dt;
+    if (this.eventCheckTimer >= 60) {
+      this.eventCheckTimer = 0;
+      this.triggerRandomEvent();
+    }
   }
 
   private advanceClock(dt: number) {
-    // 1 real second = 1 sim minute at 1x
     this.state.timeOfDay += (dt / 60) * 0.8;
     if (this.state.timeOfDay >= 24) {
       this.state.timeOfDay -= 24;
       this.state.day += 1;
+    }
+  }
+
+  private triggerRandomEvent() {
+    const roll = Math.random();
+    if (roll < 0.25) {
+      // Giant Picnic Drop!
+      const newDonut: SurfaceEntity = {
+        id: `surf_drop_${Date.now()}`,
+        type: 'donut',
+        x: (18 + Math.random() * 15) * TILE_SIZE,
+        y: (SURFACE_ROW - 1) * TILE_SIZE,
+        z: 0,
+        width: 56,
+        height: 44,
+        depth: 32,
+        resourcesRemaining: 180,
+        maxResources: 180,
+      };
+      this.surfaceEntities.push(newDonut);
+      audio.playWantFulfilled();
+    } else if (roll < 0.5) {
+      // Refresh melon or sugar
+      const melon = this.surfaceEntities.find(e => e.type === 'watermelon');
+      if (melon) melon.resourcesRemaining = Math.min(200, melon.resourcesRemaining + 50);
     }
   }
 
@@ -654,7 +746,6 @@ export class Simulation {
 
       if (b.stage === 'egg') {
         if (b.age >= b.growthDuration) {
-          // Egg hatches into Larva!
           b.stage = 'larva';
           b.age = 0;
           b.growthDuration = 80;
@@ -664,13 +755,11 @@ export class Simulation {
       } else if (b.stage === 'larva') {
         b.hunger = Math.max(0, b.hunger - dt * 0.8);
         if (b.hunger < 20) {
-          // Larva hungry fear!
           const nurse = this.ants.find(a => a.caste === 'Nurse');
           if (nurse) this.triggerFear(nurse, 'larva_goes_hungry');
         }
 
         if (b.age >= b.growthDuration && b.hunger > 40) {
-          // Larva spins into Pupa!
           b.stage = 'pupa';
           b.age = 0;
           b.growthDuration = 60;
@@ -678,7 +767,6 @@ export class Simulation {
         }
       } else if (b.stage === 'pupa') {
         if (b.age >= b.growthDuration) {
-          // Emerge as a new adult ant!
           this.brood.splice(i, 1);
           this.hatchAdultAnt(b.x, b.y);
         }
@@ -697,6 +785,7 @@ export class Simulation {
     const newAnt = this.createAnt(name, caste, `Freshly Hatched ${caste}`, '#b26838', 1.0, {
       x,
       y,
+      z: 0,
       aspiration,
       personality: {
         neat: Math.floor(Math.random() * 11),
@@ -708,6 +797,7 @@ export class Simulation {
     });
 
     this.ants.push(newAnt);
+    this.addMemory(newAnt, 'Emerged from Pupa', 'Born into the warmth of the colony nursery.', '🐣', true);
     audio.playWantFulfilled();
     this.showBubble(newAnt, '🎉', false, 4.0);
   }
@@ -716,14 +806,14 @@ export class Simulation {
     const queen = this.ants.find(a => a.caste === 'Queen');
     if (!queen) return;
 
-    // Queen lays egg if well-fed and rested every ~90 seconds
-    if (queen.motives.hunger > 60 && queen.motives.energy > 50 && this.brood.length < 10) {
+    if (queen.motives.hunger > 60 && queen.motives.energy > 50 && this.brood.length < 12) {
       if (Math.random() < dt * 0.015) {
         this.brood.push({
           id: `egg_${++this.nextId}`,
           stage: 'egg',
           x: queen.x + (Math.random() - 0.5) * 30,
           y: queen.y + 10,
+          z: 0,
           age: 0,
           growthDuration: 60,
           hunger: 100,
@@ -738,10 +828,8 @@ export class Simulation {
   private updateObjects(dt: number) {
     for (const obj of this.colonyObjects) {
       if (obj.type === 'fungus_garden') {
-        // Fungus slowly grows edible mushroom mycelium
         obj.stateValue = Math.min(100, obj.stateValue + dt * 0.5);
       } else if (obj.type === 'aphid_pen') {
-        // Domestic aphids generate sweet honeydew droplets
         obj.stateValue = Math.min(50, obj.stateValue + dt * 0.3);
       }
     }
@@ -752,7 +840,6 @@ export class Simulation {
   // ==========================================
 
   private updateAnt(ant: AntSim, dt: number) {
-    // 1. Decay Motives over time
     ant.motives.hunger = Math.max(0, ant.motives.hunger - dt * 0.22);
     ant.motives.energy = Math.max(0, ant.motives.energy - dt * (ant.isSleeping ? -1.8 : 0.18));
     ant.motives.grooming = Math.max(0, ant.motives.grooming - dt * 0.12);
@@ -760,19 +847,16 @@ export class Simulation {
     ant.motives.fun = Math.max(0, ant.motives.fun - dt * 0.16);
     ant.motives.colonyDuty = Math.max(0, ant.motives.colonyDuty - dt * 0.08);
 
-    // Fear checks
     if (ant.motives.hunger < 12) {
       this.triggerFear(ant, 'starve');
     }
     if (ant.motives.energy < 5 && !ant.isSleeping) {
       this.triggerFear(ant, 'pass_out_exhausted');
-      // Collapse on ground
       ant.isSleeping = true;
       ant.stateText = 'Passed out from exhaustion!';
       this.showBubble(ant, '💤', true, 3.0);
     }
 
-    // Psychiatrist healing
     if (ant.failurePsychiatrist) {
       ant.aspirationScore += dt * 350;
       if (ant.aspirationScore >= 1200) {
@@ -782,20 +866,14 @@ export class Simulation {
       }
     }
 
-    // 2. Update Bubbles
     if (ant.bubble) {
       ant.bubble.timer -= dt;
-      if (ant.bubble.timer <= 0) {
-        ant.bubble = null;
-      }
+      if (ant.bubble.timer <= 0) ant.bubble = null;
     }
 
-    // 3. Process Action Queue or Run Autonomy
     if (ant.actionQueue.length > 0) {
       const action = ant.actionQueue[0];
-      if (action.elapsed === 0 && action.onStart) {
-        action.onStart(ant);
-      }
+      if (action.elapsed === 0 && action.onStart) action.onStart(ant);
 
       action.elapsed += dt;
       let finished = action.elapsed >= action.duration;
@@ -806,17 +884,13 @@ export class Simulation {
       }
 
       if (finished) {
-        if (action.onComplete) {
-          action.onComplete(ant);
-        }
+        if (action.onComplete) action.onComplete(ant);
         ant.actionQueue.shift();
       }
-    } else {
-      // Free will autonomy!
+    } else if (this.state.freeWill !== 'Off') {
       this.runAntAutonomy(ant, dt);
     }
 
-    // 4. Procedural movement & animation
     ant.antennaTwitch += dt * (3 + Math.random() * 4);
     if (Math.abs(ant.vx) > 0.05 || Math.abs(ant.vy) > 0.05) {
       ant.walkCycle += dt * 8;
@@ -827,7 +901,6 @@ export class Simulation {
       ant.walkCycle = 0;
     }
 
-    // Keep ant inside world bounds
     ant.x = Math.max(1 * TILE_SIZE, Math.min((GRID_COLS - 2) * TILE_SIZE, ant.x));
     ant.y = Math.max(2 * TILE_SIZE, Math.min((GRID_ROWS - 2) * TILE_SIZE, ant.y));
   }
@@ -846,45 +919,33 @@ export class Simulation {
       return;
     }
 
-    // If lowest motive is critically low, address it!
     const m = ant.motives;
 
-    // Hunger lowest
     if (m.hunger < 45) {
       this.autonomousSeekFood(ant);
       return;
     }
-
-    // Energy lowest
     if (m.energy < 30) {
       this.autonomousSeekRest(ant);
       return;
     }
-
-    // Grooming lowest
     if (m.grooming < 40) {
       this.autonomousGroom(ant);
       return;
     }
-
-    // Social lowest
     if (m.social < 45) {
       this.autonomousSeekSocial(ant);
       return;
     }
-
-    // Fun lowest
     if (m.fun < 45) {
       this.autonomousSeekFun(ant);
       return;
     }
 
-    // Colony Duty / Caste Role
     this.autonomousCasteWork(ant, dt);
   }
 
   private autonomousSeekFood(ant: AntSim) {
-    // 1. Check if pantry has sugar
     const pantry = this.colonyObjects.find(o => o.type === 'sugar_pantry' && o.stateValue > 0);
     if (pantry) {
       this.queueWalkToObject(ant, pantry, () => {
@@ -909,7 +970,6 @@ export class Simulation {
       return;
     }
 
-    // 2. Check if fungus garden is harvestable
     const fungus = this.colonyObjects.find(o => o.type === 'fungus_garden' && o.stateValue >= 20);
     if (fungus) {
       this.queueWalkToObject(ant, fungus, () => {
@@ -933,7 +993,6 @@ export class Simulation {
       return;
     }
 
-    // 3. Go to surface watermelon or sugar
     const melon = this.surfaceEntities.find(e => e.type === 'watermelon' && e.resourcesRemaining > 0);
     if (melon) {
       this.queueWalkToCoord(ant, melon.x, melon.y, () => {
@@ -974,7 +1033,6 @@ export class Simulation {
         audio.playChime(440);
       });
     } else {
-      // Power nap on floor
       ant.isSleeping = true;
       ant.stateText = 'Taking a dirt power nap';
       this.showBubble(ant, '💤', true, 3.0);
@@ -1009,7 +1067,6 @@ export class Simulation {
       ant.facing = friend.x > ant.x ? 1 : -1;
       friend.facing = ant.x > friend.x ? 1 : -1;
 
-      // Antenna Tap & Chat
       ant.stateText = `Chatting with ${friend.name}`;
       audio.playSimlish('chat');
       this.showBubble(ant, '💬', false, 2.5);
@@ -1018,15 +1075,12 @@ export class Simulation {
       ant.motives.social = Math.min(100, ant.motives.social + 25);
       friend.motives.social = Math.min(100, friend.motives.social + 25);
 
-      // Boost relationship
       this.changeRelationship(ant, friend, 8, 4);
-
       this.triggerWant(ant, 'tell_joke');
     });
   }
 
   private autonomousSeekFun(ant: AntSim) {
-    // Radio or Pebble Game
     const radio = this.colonyObjects.find(o => o.type === 'spore_radio');
     if (radio) {
       this.queueWalkToObject(ant, radio, () => {
@@ -1054,14 +1108,12 @@ export class Simulation {
 
   private autonomousCasteWork(ant: AntSim, dt: number) {
     if (ant.caste === 'Worker') {
-      // Find marked dig tile or wander
       const digTile = this.findNearestDigTile(ant);
       if (digTile) {
         this.queueWalkToCoord(ant, digTile.c * TILE_SIZE + 16, digTile.r * TILE_SIZE + 16, () => {
           this.executeDigAction(ant, digTile.c, digTile.r);
         });
       } else {
-        // Carry food from surface to pantry if pantry is low
         const pantry = this.colonyObjects.find(o => o.type === 'sugar_pantry');
         if (pantry && pantry.stateValue < 30) {
           const sugar = this.surfaceEntities.find(s => s.type === 'sugar_pile' && s.resourcesRemaining > 0);
@@ -1071,7 +1123,6 @@ export class Simulation {
               sugar.resourcesRemaining -= 1;
               this.showBubble(ant, '🍯', false, 2.0);
 
-              // Walk to pantry to deposit
               this.queueWalkToObject(ant, pantry, () => {
                 ant.heldItem = 'none';
                 pantry.stateValue += 5;
@@ -1084,7 +1135,6 @@ export class Simulation {
         }
       }
     } else if (ant.caste === 'Nurse') {
-      // Tend hungry larvae or clean eggs
       const hungryLarva = this.brood.find(b => b.stage === 'larva' && b.hunger < 70);
       if (hungryLarva) {
         this.queueWalkToCoord(ant, hungryLarva.x, hungryLarva.y, () => {
@@ -1097,7 +1147,6 @@ export class Simulation {
         });
       }
     } else if (ant.caste === 'Forager') {
-      // Brave the surface, search for aphids or snacks
       if (Math.random() < dt * 0.1) {
         const aphid = this.surfaceEntities.find(e => e.type === 'aphid');
         if (aphid) {
@@ -1119,12 +1168,8 @@ export class Simulation {
   // ==========================================
 
   public changeRelationship(antA: AntSim, antB: AntSim, deltaDaily: number, deltaLifetime: number) {
-    if (!antA.relationships[antB.id]) {
-      antA.relationships[antB.id] = { daily: 50, lifetime: 50 };
-    }
-    if (!antB.relationships[antA.id]) {
-      antB.relationships[antA.id] = { daily: 50, lifetime: 50 };
-    }
+    if (!antA.relationships[antB.id]) antA.relationships[antB.id] = { daily: 50, lifetime: 50 };
+    if (!antB.relationships[antA.id]) antB.relationships[antA.id] = { daily: 50, lifetime: 50 };
 
     const relA = antA.relationships[antB.id];
     const relB = antB.relationships[antA.id];
@@ -1135,13 +1180,14 @@ export class Simulation {
     relB.daily = Math.max(-100, Math.min(100, relB.daily + deltaDaily));
     relB.lifetime = Math.max(-100, Math.min(100, relB.lifetime + deltaLifetime));
 
-    if (relA.daily > 80 && relA.lifetime > 70) {
+    if (relA.daily > 80 && relA.lifetime > 70 && !relA.isBestFriend) {
       relA.isBestFriend = true;
       relB.isBestFriend = true;
+      this.addMemory(antA, `Best Friends with ${antB.name}`, 'Formed a bond stronger than chitin.', '💖', true);
+      this.addMemory(antB, `Best Friends with ${antA.name}`, 'Formed a bond stronger than chitin.', '💖', true);
     }
   }
 
-  // Trophallaxis (Mouth-to-mouth liquid food sharing)
   public executeTrophallaxis(giver: AntSim, receiver: AntSim) {
     giver.stateText = `Sharing trophallaxis with ${receiver.name}`;
     receiver.stateText = `Receiving trophallaxis from ${giver.name}`;
@@ -1162,7 +1208,6 @@ export class Simulation {
     this.triggerWant(receiver, 'share_trophallaxis');
   }
 
-  // Antenna Jousting (Playful combat)
   public executeAntennaJoust(antA: AntSim, antB: AntSim) {
     audio.playSimlish('happy');
     this.showBubble(antA, '⚔️', false, 3.0);
@@ -1177,7 +1222,7 @@ export class Simulation {
   }
 
   // ==========================================
-  // DIGGING & BUILDING (BUILD MODE)
+  // DIGGING & BUILDING
   // ==========================================
 
   public markTileForDig(col: number, row: number) {
@@ -1195,7 +1240,7 @@ export class Simulation {
     if (tile.type === 'soil' || tile.type === 'hard_rock') {
       tile.type = 'tunnel';
       tile.markedForDig = false;
-      this.state.pollenPoints += 5; // gain § for excavated minerals
+      this.state.pollenPoints += 5;
       audio.playDigDirt();
     }
   }
@@ -1246,7 +1291,7 @@ export class Simulation {
   }
 
   // ==========================================
-  // BUY MODE (PURCHASE & PLACE OBJECT)
+  // BUY MODE
   // ==========================================
 
   public buyObject(catalogType: string, tileCol: number, tileRow: number): boolean {
@@ -1255,7 +1300,7 @@ export class Simulation {
 
     if (this.state.pollenPoints < item.cost) {
       audio.playFearTriggered();
-      return false; // Not enough §
+      return false;
     }
 
     this.state.pollenPoints -= item.cost;
@@ -1264,8 +1309,10 @@ export class Simulation {
       type: item.type,
       x: tileCol * TILE_SIZE,
       y: tileRow * TILE_SIZE,
+      z: 0,
       width: item.width * TILE_SIZE,
       height: item.height * TILE_SIZE,
+      depth: item.depth * TILE_SIZE,
       stateValue: item.type === 'sugar_pantry' ? 20 : item.type === 'spore_radio' ? 1 : 0,
     };
 
@@ -1283,10 +1330,10 @@ export class Simulation {
       id: `walk_${Math.random()}`,
       name: 'Walk to location',
       icon: '🐾',
-      duration: 15.0, // max timeout
+      duration: 15.0,
       elapsed: 0,
       targetType: 'none',
-      onUpdate: (a) => {
+      onUpdate: a => {
         const dx = targetX - a.x;
         const dy = targetY - a.y;
         const dist = Math.hypot(dx, dy);
@@ -1294,7 +1341,7 @@ export class Simulation {
         if (dist < 12) {
           a.vx = 0;
           a.vy = 0;
-          return true; // arrived!
+          return true;
         }
 
         const speed = a.aspirationLevel === 'Platinum' ? 75 : 55;
@@ -1318,5 +1365,108 @@ export class Simulation {
   public getSelectedAnt(): AntSim | null {
     if (!this.selectedAntId) return null;
     return this.ants.find(a => a.id === this.selectedAntId) || null;
+  }
+
+  // ==========================================
+  // SAVE / LOAD SYSTEM (COMMERCIAL READY)
+  // ==========================================
+
+  public serialize(): SaveGameData {
+    return {
+      version: 1,
+      saveTime: new Date().toISOString(),
+      colonyName: 'Great Anthill',
+      state: { ...this.state },
+      grid: this.grid.map(row => row.map(t => ({ type: t.type, markedForDig: t.markedForDig }))),
+      ants: this.ants.map(a => {
+        const { actionQueue, bubble, ...rest } = a;
+        void actionQueue;
+        void bubble;
+        return rest;
+      }),
+      brood: [...this.brood],
+      colonyObjects: [...this.colonyObjects],
+      surfaceEntities: [...this.surfaceEntities],
+      selectedAntId: this.selectedAntId,
+    };
+  }
+
+  public deserialize(data: SaveGameData) {
+    this.state = { ...data.state };
+    this.selectedAntId = data.selectedAntId;
+
+    // Restore Grid
+    for (let r = 0; r < data.grid.length && r < GRID_ROWS; r++) {
+      for (let c = 0; c < data.grid[r].length && c < GRID_COLS; c++) {
+        if (this.grid[r] && this.grid[r][c]) {
+          this.grid[r][c].type = data.grid[r][c].type;
+          this.grid[r][c].markedForDig = data.grid[r][c].markedForDig || false;
+        }
+      }
+    }
+
+    // Restore Ants
+    this.ants = data.ants.map(saved => ({
+      ...saved,
+      actionQueue: [],
+      bubble: null,
+    }));
+
+    this.brood = [...data.brood];
+    this.colonyObjects = [...data.colonyObjects];
+    this.surfaceEntities = [...data.surfaceEntities];
+
+    audio.playSaveLoadChime();
+  }
+
+  public saveToLocalStorage(slot: string = 'slot_1'): boolean {
+    try {
+      const json = JSON.stringify(this.serialize());
+      localStorage.setItem(`simants_save_${slot}`, json);
+      audio.playSaveLoadChime();
+      return true;
+    } catch (e) {
+      console.error('Save failed', e);
+      return false;
+    }
+  }
+
+  public loadFromLocalStorage(slot: string = 'slot_1'): boolean {
+    try {
+      const json = localStorage.getItem(`simants_save_${slot}`);
+      if (!json) return false;
+      const data: SaveGameData = JSON.parse(json);
+      this.deserialize(data);
+      return true;
+    } catch (e) {
+      console.error('Load failed', e);
+      return false;
+    }
+  }
+
+  public exportSaveJSON(): string {
+    return JSON.stringify(this.serialize(), null, 2);
+  }
+
+  public importSaveJSON(json: string): boolean {
+    try {
+      const data: SaveGameData = JSON.parse(json);
+      this.deserialize(data);
+      return true;
+    } catch (e) {
+      console.error('Import failed', e);
+      return false;
+    }
+  }
+
+  public resetColony() {
+    this.initWorldGrid();
+    this.initSurfaceEntities();
+    this.initColonyObjects();
+    this.initStartingAnts();
+    this.state.pollenPoints = 280;
+    this.state.day = 1;
+    this.state.timeOfDay = 9.5;
+    audio.playSaveLoadChime();
   }
 }

@@ -1,6 +1,6 @@
 // ==========================================
 // THE SIMS 2: ANT COLONY (THE SIMANTS 2)
-// Data Types & System Definitions
+// Data Types, Interfaces & Save Data Structures
 // ==========================================
 
 export type CasteType = 'Queen' | 'Worker' | 'Nurse' | 'Soldier' | 'Forager';
@@ -15,20 +15,37 @@ export type AspirationType =
 export type AspirationLevel = 'Failure' | 'Red' | 'Green' | 'Gold' | 'Platinum';
 
 export interface Personality {
-  neat: number;       // 0-10 (Cleans dirt/trash vs leaves messes)
-  outgoing: number;   // 0-10 (Chatty vs solitary)
-  active: number;     // 0-10 (Fast worker vs loves naps)
-  playful: number;    // 0-10 (Jousting/jokes vs serious worker)
-  nice: number;       // 0-10 (Generous trophallaxis vs snappy)
+  neat: number;       // 0-10
+  outgoing: number;   // 0-10
+  active: number;     // 0-10
+  playful: number;    // 0-10
+  nice: number;       // 0-10
 }
 
 export interface Motives {
-  hunger: number;     // 0-100 (Starving -> Full)
-  energy: number;     // 0-100 (Exhausted -> Energized)
-  grooming: number;   // 0-100 (Filthy/mites -> Pristine)
-  social: number;     // 0-100 (Lonely -> Beloved)
-  fun: number;        // 0-100 (Miserable -> Entertained)
-  colonyDuty: number; // 0-100 (Guilty slacker -> Hero of the Colony)
+  hunger: number;     // 0-100
+  energy: number;     // 0-100
+  grooming: number;   // 0-100
+  social: number;     // 0-100
+  fun: number;        // 0-100
+  colonyDuty: number; // 0-100
+}
+
+export interface AntSkills {
+  digging: number;    // 1-10
+  foraging: number;   // 1-10
+  nursing: number;    // 1-10
+  combat: number;     // 1-10
+  charisma: number;   // 1-10
+}
+
+export interface AntMemory {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  isPositive: boolean;
+  day: number;
 }
 
 export type WantFearKey =
@@ -58,7 +75,7 @@ export interface WantOrFear {
   name: string;
   description: string;
   icon: string;
-  points: number; // positive for wants (+1000..+5000), negative for fears (-1000..-4000)
+  points: number;
   targetId?: string;
 }
 
@@ -82,18 +99,20 @@ export type HeldItemType =
   | 'flower_petal'
   | 'shiny_pebble';
 
+export type AntAccessoryType = 'none' | 'crown' | 'hardhat' | 'nurse_cap' | 'helmet' | 'flower' | 'goggles';
+
 export interface QueuedAction {
   id: string;
   name: string;
   icon: string;
-  duration: number;   // total time in seconds
-  elapsed: number;    // time spent
+  duration: number;
+  elapsed: number;
   targetType: 'ant' | 'object' | 'tile' | 'surface_entity' | 'self' | 'none';
   targetId?: string;
   targetX?: number;
   targetY?: number;
   onStart?: (ant: AntSim) => void;
-  onUpdate?: (ant: AntSim, dt: number) => boolean; // return true if finished
+  onUpdate?: (ant: AntSim, dt: number) => boolean;
   onComplete?: (ant: AntSim) => void;
   interruptible: boolean;
 }
@@ -101,8 +120,8 @@ export interface QueuedAction {
 export interface SpeechBubble {
   text?: string;
   icon: string;
-  isThought: boolean; // thought bubble vs speech bubble
-  timer: number;      // remaining duration in seconds
+  isThought: boolean;
+  timer: number;
 }
 
 export interface AntSim {
@@ -111,24 +130,29 @@ export interface AntSim {
   title: string;
   caste: CasteType;
   color: string;
+  accessory: AntAccessoryType;
   scale: number;
   aspiration: AspirationType;
   aspirationScore: number;
   aspirationLevel: AspirationLevel;
   personality: Personality;
   motives: Motives;
+  skills: AntSkills;
+  memories: AntMemory[];
   wants: WantOrFear[];
   fears: WantOrFear[];
   relationships: Record<string, Relationship>;
   heldItem: HeldItemType;
   actionQueue: QueuedAction[];
 
-  // World physical state
+  // 3D Physical State
   x: number;
   y: number;
+  z: number;
   vx: number;
   vy: number;
-  facing: number; // angle in radians or -1/1
+  vz: number;
+  facing: number;
   walkCycle: number;
   antennaTwitch: number;
   isSleeping: boolean;
@@ -136,39 +160,39 @@ export interface AntSim {
   isDigging: boolean;
   stateText: string;
 
-  // Bubbles & visuals
   bubble: SpeechBubble | null;
-  failurePsychiatrist: boolean; // Is the Social Ant Shrink active for this ant?
+  failurePsychiatrist: boolean;
 }
 
-// Brood: Eggs and Larvae
+// Brood Entities
 export interface BroodEntity {
   id: string;
   stage: 'egg' | 'larva' | 'pupa';
   x: number;
   y: number;
-  chamberId?: string;
-  age: number;        // in seconds
+  z: number;
+  age: number;
   growthDuration: number;
-  hunger: number;     // for larvae (0-100)
+  hunger: number;
   careQuality: number;
 }
 
 // Surface World Entities
 export interface SurfaceEntity {
   id: string;
-  type: 'watermelon' | 'donut' | 'sugar_pile' | 'aphid' | 'flower' | 'spider';
+  type: 'watermelon' | 'donut' | 'sugar_pile' | 'aphid' | 'flower' | 'spider' | 'raindrop';
   x: number;
   y: number;
+  z: number;
   width: number;
   height: number;
+  depth: number;
   resourcesRemaining: number;
   maxResources: number;
   tamed?: boolean;
-  moodTimer?: number;
 }
 
-// Colony Furniture & Amenities
+// Object Catalog
 export type ObjectCatalogCategory = 'Comfort' | 'Food' | 'Fun' | 'Decor' | 'Queen';
 
 export interface ObjectCatalogItem {
@@ -180,7 +204,8 @@ export interface ObjectCatalogItem {
   icon: string;
   width: number;
   height: number;
-  motiveEffects: Partial<Record<keyof Motives, number>>; // motive rate/sec
+  depth: number;
+  motiveEffects: Partial<Record<keyof Motives, number>>;
 }
 
 export interface ColonyObject {
@@ -188,17 +213,19 @@ export interface ColonyObject {
   type: string;
   x: number;
   y: number;
+  z: number;
   width: number;
   height: number;
+  depth: number;
   occupiedByAntId?: string;
-  stateValue: number; // e.g. stored sugar count, radio playing state
+  stateValue: number;
 }
 
 // World Grid (Cutaway Anthill)
 export const TILE_SIZE = 32;
 export const GRID_COLS = 50;
 export const GRID_ROWS = 36;
-export const SURFACE_ROW = 10; // Row index where ground starts (0..9 is surface sky/grass)
+export const SURFACE_ROW = 10;
 
 export type TileType =
   | 'sky'
@@ -216,14 +243,33 @@ export interface WorldTile {
   markedForDig?: boolean;
 }
 
-// Game Modes
+// Modes & Settings
 export type GameMode = 'Live' | 'Buy' | 'Build';
+export type CameraPreset = 'Dollhouse' | 'Isometric' | 'Follow' | 'Surface';
 
-// Colony Economy & Simulation Clock
 export interface ColonyState {
-  pollenPoints: number; // Currency §
+  pollenPoints: number;
   day: number;
-  timeOfDay: number;    // 0 to 24 hours
-  timeScale: number;    // 0 = Pause, 1 = 1x, 2 = 2x, 3 = 4x
+  timeOfDay: number;
+  timeScale: number;
   weather: 'Sunny' | 'Gentle_Breeze' | 'Picnic_Day' | 'Light_Shower';
+  freeWill: 'High' | 'Medium' | 'Off';
+  musicVolume: number;
+  sfxVolume: number;
+  masterVolume: number;
+  radioStation: 'Spore_Jazz' | 'Anthill_Bossa' | 'Chitter_Pop';
+}
+
+// Save Game Serialization Data
+export interface SaveGameData {
+  version: number;
+  saveTime: string;
+  colonyName: string;
+  state: ColonyState;
+  grid: { type: TileType; markedForDig?: boolean }[][];
+  ants: Array<Omit<AntSim, 'actionQueue' | 'bubble'>>;
+  brood: BroodEntity[];
+  colonyObjects: ColonyObject[];
+  surfaceEntities: SurfaceEntity[];
+  selectedAntId: string | null;
 }

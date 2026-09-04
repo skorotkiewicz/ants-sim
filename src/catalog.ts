@@ -16,6 +16,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🍃',
     width: 2,
     height: 1,
+    depth: 1,
     motiveEffects: { energy: 12, fun: 2 },
   },
   {
@@ -27,6 +28,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🛏️',
     width: 2,
     height: 1,
+    depth: 1,
     motiveEffects: { energy: 20, grooming: 4 },
   },
   {
@@ -38,6 +40,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🌹',
     width: 2,
     height: 1,
+    depth: 1,
     motiveEffects: { energy: 25, colonyDuty: 10, fun: 8 },
   },
 
@@ -51,6 +54,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🍯',
     width: 2,
     height: 1,
+    depth: 1,
     motiveEffects: { hunger: 25 },
   },
   {
@@ -62,6 +66,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🍄',
     width: 3,
     height: 2,
+    depth: 1,
     motiveEffects: { hunger: 30, colonyDuty: 5 },
   },
   {
@@ -73,6 +78,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🐛',
     width: 3,
     height: 2,
+    depth: 1,
     motiveEffects: { hunger: 20, fun: 15 },
   },
 
@@ -86,6 +92,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '📻',
     width: 2,
     height: 1,
+    depth: 1,
     motiveEffects: { fun: 25, social: 12 },
   },
   {
@@ -97,6 +104,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🎯',
     width: 2,
     height: 1,
+    depth: 1,
     motiveEffects: { fun: 20, social: 18 },
   },
   {
@@ -108,6 +116,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🪞',
     width: 1,
     height: 2,
+    depth: 1,
     motiveEffects: { grooming: 25, fun: 8 },
   },
 
@@ -121,6 +130,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '💡',
     width: 1,
     height: 1,
+    depth: 1,
     motiveEffects: { colonyDuty: 5 },
   },
   {
@@ -132,6 +142,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '🐚',
     width: 3,
     height: 2,
+    depth: 1,
     motiveEffects: { colonyDuty: 15 },
   },
 
@@ -145,6 +156,7 @@ export const CATALOG: ObjectCatalogItem[] = [
     icon: '👑',
     width: 3,
     height: 2,
+    depth: 1,
     motiveEffects: { colonyDuty: 35, social: 15 },
   },
 ];

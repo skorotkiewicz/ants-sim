@@ -1,9 +1,9 @@
 // ==========================================
 // THE SIMS 2: ANT COLONY AUDIO ENGINE
-// Web Audio API Procedural Synth & Simlish
+// Multi-station Synthesizer, Simlish & SFX
 // ==========================================
 
-class SoundManager {
+export class SoundManager {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
   private musicGain: GainNode | null = null;
@@ -14,9 +14,10 @@ class SoundManager {
   private musicStep: number = 0;
   private musicIntervalId: number | null = null;
 
+  public currentStation: 'Spore_Jazz' | 'Anthill_Bossa' | 'Chitter_Pop' = 'Spore_Jazz';
+
   // Jazz chord progressions for The Sims 2 lounge vibe
-  // Fmaj7 -> Em7 -> Dm7 -> G7 -> Cmaj7
-  private chords = [
+  private jazzChords = [
     [349.23, 440.0, 523.25, 659.25], // Fmaj7
     [329.63, 392.0, 493.88, 587.33], // Em7
     [293.66, 349.23, 440.0, 523.25], // Dm7
@@ -25,6 +26,14 @@ class SoundManager {
     [220.0, 261.63, 329.63, 392.0],  // Am7
     [293.66, 349.23, 440.0, 523.25], // Dm7
     [246.94, 293.66, 349.23, 440.0], // Bm7b5
+  ];
+
+  // Upbeat Bossa Nova chords
+  private bossaChords = [
+    [261.63, 329.63, 392.0, 493.88], // Cmaj7
+    [220.0, 261.63, 329.63, 392.0],  // Am7
+    [293.66, 349.23, 440.0, 523.25], // Dm7
+    [196.0, 246.94, 293.66, 349.23], // G7
   ];
 
   private bassLines = [
@@ -40,7 +49,9 @@ class SoundManager {
 
   public init() {
     if (this.ctx) return;
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     this.ctx = new AudioCtx();
 
     this.masterGain = this.ctx.createGain();
@@ -48,11 +59,11 @@ class SoundManager {
     this.masterGain.connect(this.ctx.destination);
 
     this.musicGain = this.ctx.createGain();
-    this.musicGain.gain.value = 0.18;
+    this.musicGain.gain.value = 0.2;
     this.musicGain.connect(this.masterGain);
 
     this.sfxGain = this.ctx.createGain();
-    this.sfxGain.gain.value = 0.4;
+    this.sfxGain.gain.value = 0.45;
     this.sfxGain.connect(this.masterGain);
   }
 
@@ -62,6 +73,27 @@ class SoundManager {
     }
     if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
+    }
+  }
+
+  public setMasterVolume(v: number) {
+    this.ensureContext();
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setTargetAtTime(this.isMuted ? 0 : v, this.ctx.currentTime, 0.05);
+    }
+  }
+
+  public setMusicVolume(v: number) {
+    this.ensureContext();
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
+    }
+  }
+
+  public setSfxVolume(v: number) {
+    this.ensureContext();
+    if (this.sfxGain && this.ctx) {
+      this.sfxGain.gain.setTargetAtTime(v, this.ctx.currentTime, 0.05);
     }
   }
 
@@ -78,18 +110,26 @@ class SoundManager {
     return this.isMuted;
   }
 
-  // Procedural Sims 2 Lounge / Elevator Bossa Nova
+  public setRadioStation(station: 'Spore_Jazz' | 'Anthill_Bossa' | 'Chitter_Pop') {
+    this.currentStation = station;
+  }
+
+  // ==========================================
+  // PROCEDURAL RADIO MUSIC
+  // ==========================================
+
   public startMusic() {
     this.ensureContext();
     if (this.isMusicPlaying) return;
     this.isMusicPlaying = true;
     this.musicStep = 0;
 
-    // 120 BPM: eighth notes every 250ms
+    const tempo = this.currentStation === 'Chitter_Pop' ? 200 : 240;
+
     this.musicIntervalId = window.setInterval(() => {
       if (!this.isMusicPlaying || !this.ctx || this.isMuted) return;
       this.tickMusic();
-    }, 240);
+    }, tempo);
   }
 
   public stopMusic() {
@@ -103,19 +143,20 @@ class SoundManager {
   private tickMusic() {
     if (!this.ctx || !this.musicGain) return;
     const t = this.ctx.currentTime;
-    const bar = Math.floor(this.musicStep / 8) % this.chords.length;
+    const chords = this.currentStation === 'Anthill_Bossa' ? this.bossaChords : this.jazzChords;
+    const bar = Math.floor(this.musicStep / 8) % chords.length;
     const stepInBar = this.musicStep % 8;
 
-    // Electric Piano Chord (Rhodes-like warmth)
+    // Piano chords
     if (stepInBar === 0 || stepInBar === 3 || stepInBar === 6) {
-      const chord = this.chords[bar];
+      const chord = chords[bar];
       chord.forEach((freq, idx) => {
         const osc = this.ctx!.createOscillator();
         const gain = this.ctx!.createGain();
-        osc.type = 'triangle';
+        osc.type = this.currentStation === 'Chitter_Pop' ? 'square' : 'triangle';
         osc.frequency.setValueAtTime(freq, t);
 
-        const velocity = idx === 0 ? 0.08 : 0.05;
+        const velocity = idx === 0 ? 0.07 : 0.04;
         gain.gain.setValueAtTime(velocity, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
 
@@ -130,7 +171,7 @@ class SoundManager {
     // Walking Bass
     if (stepInBar % 2 === 0) {
       const bassIndex = (stepInBar / 2) % 4;
-      const freq = this.bassLines[bar][bassIndex];
+      const freq = this.bassLines[bar % this.bassLines.length][bassIndex];
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       const filter = this.ctx.createBiquadFilter();
@@ -152,7 +193,7 @@ class SoundManager {
       osc.stop(t + 0.4);
     }
 
-    // Light Jazz Hi-Hat / Brush
+    // Jazz Hi-Hat
     if (stepInBar % 2 === 1) {
       this.playHiHat(t, stepInBar === 3 || stepInBar === 7 ? 0.03 : 0.015);
     }
@@ -188,8 +229,7 @@ class SoundManager {
   }
 
   // ==========================================
-  // SIMLISH SPEECH SYNTHESIZER
-  // Generates quirky ant chatter phonemes
+  // SIMLISH SPEECH
   // ==========================================
   public playSimlish(mood: 'happy' | 'chat' | 'whine' | 'romantic' | 'angry' = 'chat') {
     this.ensureContext();
@@ -232,12 +272,11 @@ class SoundManager {
   // THE SIMS 2 SOUND EFFECTS
   // ==========================================
 
-  // Iconic Plumbob Selection Arpeggio (C6-E6-G6-C7)
   public playPlumbobSelect() {
     this.ensureContext();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
 
-    const notes = [1046.5, 1318.5, 1567.98, 2093.0]; // C6, E6, G6, C7
+    const notes = [1046.5, 1318.5, 1567.98, 2093.0];
     notes.forEach((freq, idx) => {
       const t = this.ctx!.currentTime + idx * 0.04;
       const osc = this.ctx!.createOscillator();
@@ -257,16 +296,15 @@ class SoundManager {
     });
   }
 
-  // Want Fulfilled Fanfare (+Aspiration Score!)
   public playWantFulfilled() {
     this.ensureContext();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
 
     const chords = [
-      { notes: [523.25, 659.25, 783.99], time: 0 },       // C maj
-      { notes: [587.33, 739.99, 880.0], time: 0.12 },     // D maj
-      { notes: [659.25, 830.61, 987.77], time: 0.24 },    // E maj
-      { notes: [1046.5, 1318.51, 1567.98], time: 0.4 },   // High C maj shimmer!
+      { notes: [523.25, 659.25, 783.99], time: 0 },
+      { notes: [587.33, 739.99, 880.0], time: 0.12 },
+      { notes: [659.25, 830.61, 987.77], time: 0.24 },
+      { notes: [1046.5, 1318.51, 1567.98], time: 0.4 },
     ];
 
     chords.forEach(c => {
@@ -288,12 +326,11 @@ class SoundManager {
     });
   }
 
-  // Fear Triggered Wah-Wah
   public playFearTriggered() {
     this.ensureContext();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
 
-    const notes = [220.0, 207.65, 196.0, 185.0]; // sliding down chromatically
+    const notes = [220.0, 207.65, 196.0, 185.0];
     notes.forEach((freq, idx) => {
       const t = this.ctx!.currentTime + idx * 0.18;
       const osc = this.ctx!.createOscillator();
@@ -319,7 +356,6 @@ class SoundManager {
     });
   }
 
-  // Trophallaxis Food Sharing (liquid slurp + heart chime)
   public playTrophallaxis() {
     this.ensureContext();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
@@ -341,14 +377,12 @@ class SoundManager {
     osc.start(t);
     osc.stop(t + 0.35);
 
-    // Sweet sparkling chime
     setTimeout(() => {
       this.playChime(1200);
       setTimeout(() => this.playChime(1600), 80);
     }, 150);
   }
 
-  // Digging Dirt Crunch
   public playDigDirt() {
     this.ensureContext();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
@@ -380,7 +414,6 @@ class SoundManager {
     noise.start(t);
   }
 
-  // UI Button Click
   public playClick() {
     this.ensureContext();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
@@ -402,7 +435,6 @@ class SoundManager {
     osc.stop(t + 0.05);
   }
 
-  // Buy Mode Placement Pop
   public playPlaceObject() {
     this.ensureContext();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
@@ -424,7 +456,31 @@ class SoundManager {
     osc.stop(t + 0.16);
   }
 
+  public playSaveLoadChime() {
+    this.ensureContext();
+    if (!this.ctx || !this.sfxGain || this.isMuted) return;
+
+    [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+      const t = this.ctx!.currentTime + idx * 0.08;
+      const osc = this.ctx!.createOscillator();
+      const gain = this.ctx!.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t);
+
+      gain.gain.setValueAtTime(0.12, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+
+      osc.start(t);
+      osc.stop(t + 0.35);
+    });
+  }
+
   public playChime(freq: number) {
+    this.ensureContext();
     if (!this.ctx || !this.sfxGain || this.isMuted) return;
     const t = this.ctx.currentTime;
     const osc = this.ctx.createOscillator();
