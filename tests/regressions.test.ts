@@ -1,6 +1,7 @@
 import { afterAll, expect, spyOn, test } from 'bun:test';
 import * as THREE from 'three';
 import { audio } from '../src/audio';
+import { CATALOG } from '../src/catalog';
 import { Renderer3D } from '../src/renderer3d';
 import { Simulation } from '../src/simulation';
 import { UIManager } from '../src/ui';
@@ -121,6 +122,38 @@ function sceneRenderer() {
   }
   return renderer;
 }
+
+for (const item of CATALOG) {
+  test(`${item.name} has visible geometry after purchase and reload`, () => {
+    const sim = controlledColony();
+    sim.state.pollenPoints = item.cost;
+    expect(sim.buyObject(item.type, 20, 16)).toBe(true);
+    const id = sim.colonyObjects.at(-1)!.id;
+    const renderer = sceneRenderer();
+    const checkModel = () => {
+      renderer.syncColonyObjects(sim);
+      const model = renderer.objectMeshes.get(id);
+      const bounds = new THREE.Box3().setFromObject(model);
+      expect(bounds.isEmpty()).toBe(false);
+      expect(bounds.getSize(new THREE.Vector3()).toArray().every(n => Number.isFinite(n) && n > 0)).toBe(true);
+      expect(model.parent === renderer.scene).toBe(true);
+      return model;
+    };
+    const original = checkModel();
+    sim.deserialize(JSON.parse(sim.exportSaveJSON()));
+    expect(checkModel() === original).toBe(false);
+  });
+}
+
+test('every starting surface entity has visible geometry', () => {
+  const sim = controlledColony();
+  const renderer = sceneRenderer();
+  renderer.syncSurfaceEntities(sim);
+  for (const entity of sim.surfaceEntities) {
+    const bounds = new THREE.Box3().setFromObject(renderer.surfaceMeshes.get(entity.id));
+    expect(bounds.isEmpty()).toBe(false);
+  }
+});
 
 test('brood stage changes replace models and hatched brood releases GPU resources', () => {
   const sim = new Simulation();

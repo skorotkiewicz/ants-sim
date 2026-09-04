@@ -451,6 +451,31 @@ export class Renderer3D {
           const honeyMesh = new THREE.Mesh(honeyGeo, honeyMat);
           honeyMesh.position.set(-2, 7, 0);
           group.add(honeyMesh);
+        } else if (ent.type === 'flower') {
+          const stemHeight = SURFACE_ROW * TILE_SIZE - ent.y - 16;
+          const stem = new THREE.Mesh(
+            new THREE.CylinderGeometry(2, 2, stemHeight, 8),
+            new THREE.MeshStandardMaterial({ color: 0x387820 })
+          );
+          stem.position.set(ent.width / 2, -16 - stemHeight / 2, 0);
+          group.add(stem);
+          const petalGeo = new THREE.SphereGeometry(1, 10, 8);
+          const petalMat = new THREE.MeshStandardMaterial({ color: 0xfdb813 });
+          for (let i = 0; i < 8; i++) {
+            const angle = i * Math.PI / 4;
+            const petal = new THREE.Mesh(petalGeo, petalMat);
+            petal.scale.set(8, 5, 3);
+            petal.rotation.z = angle;
+            petal.position.set(ent.width / 2 + Math.cos(angle) * 12, -16 + Math.sin(angle) * 12, 0);
+            group.add(petal);
+          }
+          const center = new THREE.Mesh(
+            new THREE.SphereGeometry(7, 12, 8),
+            new THREE.MeshStandardMaterial({ color: 0x5c3818 })
+          );
+          center.scale.z = 0.6;
+          center.position.set(ent.width / 2, -16, 3);
+          group.add(center);
         }
 
         group.userData.entity = ent;
@@ -468,9 +493,16 @@ export class Renderer3D {
   private syncColonyObjects(sim: Simulation) {
     this.pruneModels(this.objectMeshes, sim.colonyObjects);
     sim.colonyObjects.forEach(obj => {
-      let group = this.objectMeshes.get(obj.id);
-      if (!group) {
-        group = new THREE.Group();
+      if (!this.objectMeshes.has(obj.id)) {
+        const group = new THREE.Group();
+        const addPart = (geometry: THREE.BufferGeometry, color: number, x = 0, y = 0, z = 0) => {
+          const mesh = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color, roughness: 0.7 }));
+          mesh.position.set(x, y, z);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          group.add(mesh);
+          return mesh;
+        };
 
         if (obj.type === 'leaf_hammock') {
           // Curved green hammock leaf
@@ -480,6 +512,73 @@ export class Renderer3D {
           leaf.rotation.z = Math.PI / 2;
           leaf.position.y = -10;
           group.add(leaf);
+        } else if (obj.type === 'moss_mattress') {
+          addPart(new THREE.BoxGeometry(obj.width - 8, 12, obj.depth - 4), 0x397a2e, 0, -6);
+          for (const x of [-18, 0, 18]) {
+            const tuft = addPart(new THREE.SphereGeometry(1, 12, 8), 0x529b35, x, 0);
+            tuft.scale.set(12, 6, 12);
+          }
+          const pillow = addPart(new THREE.SphereGeometry(1, 12, 8), 0xf2a7b5, -18, 6);
+          pillow.scale.set(9, 4, 11);
+        } else if (obj.type === 'royal_petal_cushion') {
+          addPart(new THREE.BoxGeometry(obj.width - 6, 8, obj.depth - 4), 0xb88732, 0, -10);
+          addPart(new THREE.BoxGeometry(obj.width - 10, 22, 6), 0x9a244a, 0, 0, -10);
+          for (const x of [-18, 0, 18]) {
+            const petal = addPart(new THREE.SphereGeometry(1, 12, 8), 0xd96278, x, -2, 3);
+            petal.scale.set(12, 7, 11);
+          }
+        } else if (obj.type === 'fungus_garden') {
+          addPart(new THREE.BoxGeometry(obj.width - 4, 12, obj.depth), 0x654321, 0, -24);
+          addPart(new THREE.BoxGeometry(obj.width - 10, 4, obj.depth - 6), 0x4c7c34, 0, -16);
+          for (const x of [-28, 0, 28]) {
+            addPart(new THREE.CylinderGeometry(3, 4, 18, 8), 0xf0ebd8, x, -5);
+            addPart(new THREE.SphereGeometry(11, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), 0xe63946, x, 4);
+            addPart(new THREE.SphereGeometry(2, 8, 6), 0xf0ebd8, x, 9, 8);
+          }
+        } else if (obj.type === 'aphid_pen') {
+          addPart(new THREE.BoxGeometry(obj.width - 4, 6, obj.depth), 0x4c7c34, 0, -28);
+          for (const z of [-12, 12]) {
+            addPart(new THREE.BoxGeometry(obj.width - 6, 4, 3), 0xb58b52, 0, -12, z);
+            for (const x of [-obj.width / 2 + 6, obj.width / 2 - 6]) {
+              addPart(new THREE.CylinderGeometry(2, 2, 24, 8), 0x8b5a2b, x, -16, z);
+            }
+          }
+          for (const x of [-22, 18]) {
+            const aphid = addPart(new THREE.SphereGeometry(8, 12, 8), 0x70c040, x, -15);
+            aphid.scale.x = 1.4;
+            addPart(new THREE.SphereGeometry(2, 8, 6), 0x111111, x + 6, -12, 6);
+            addPart(new THREE.SphereGeometry(4, 8, 6), 0xffdf60, x - 5, -3);
+          }
+        } else if (obj.type === 'pebble_table') {
+          addPart(new THREE.BoxGeometry(obj.width - 4, 5, obj.depth - 4), 0x8b5a2b, 0, -2);
+          for (const x of [-22, 22]) {
+            addPart(new THREE.BoxGeometry(6, 12, 20), 0x654321, x, -10);
+          }
+          for (const z of [-8, 0, 8]) {
+            addPart(new THREE.ConeGeometry(3, 8, 8), 0xd4a373, 20, 4, z);
+          }
+          addPart(new THREE.SphereGeometry(5, 12, 8), 0x697a80, -16, 5);
+          addPart(new THREE.SphereGeometry(4, 12, 8), 0xc0b3a0, -5, 4, 6);
+        } else if (obj.type === 'dewdrop_mirror') {
+          addPart(new THREE.CylinderGeometry(12, 14, 6, 12), 0x8b5a2b, 0, -28);
+          addPart(new THREE.CylinderGeometry(3, 4, 25, 8), 0xb88732, 0, -14);
+          const rim = addPart(new THREE.TorusGeometry(12, 2, 8, 24), 0xd4a373, 0, 10);
+          rim.scale.y = 1.4;
+          const drop = addPart(new THREE.SphereGeometry(12, 16, 12), 0xbce8ee, 0, 10);
+          drop.scale.set(1, 1.4, 0.4);
+          drop.material.roughness = 0.1;
+          drop.material.metalness = 0.3;
+          const glint = addPart(new THREE.SphereGeometry(2, 8, 6), 0xffffff, -4, 16, 4);
+          glint.scale.y = 2;
+        } else if (obj.type === 'snail_shell_arch') {
+          const radius = obj.width * 0.38;
+          addPart(new THREE.TorusGeometry(radius, 7, 10, 32, Math.PI), 0xd4a373, 0, -24);
+          for (const x of [-radius, radius]) {
+            addPart(new THREE.CylinderGeometry(9, 11, 8, 12), 0xb58b52, x, -28);
+          }
+          for (const ring of [9, 5, 2]) {
+            addPart(new THREE.TorusGeometry(ring, 1.5, 6, 20), 0x8b5a2b, 0, radius - 24, 7);
+          }
         } else if (obj.type === 'sugar_pantry') {
           // Wooden Trough
           const troughGeo = new THREE.BoxGeometry(obj.width, 16, 24);
