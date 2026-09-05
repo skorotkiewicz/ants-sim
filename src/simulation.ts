@@ -1401,10 +1401,11 @@ export class Simulation {
   }
 
   public findPath(startX: number, startY: number, targetX: number, targetY: number, adjacent: boolean = false): Array<{ x: number; y: number }> | null {
+    // ponytail: tile-center routing; add body-clearance checks for size-restricted tunnels.
     if (![startX, startY, targetX, targetY].every(Number.isFinite)) return null;
     const startCol = Math.floor(startX / TILE_SIZE), startRow = Math.floor(startY / TILE_SIZE);
     const col = Math.floor(targetX / TILE_SIZE), row = Math.floor(targetY / TILE_SIZE);
-    if (!this.isWalkable(startCol, startRow) || (!adjacent && !this.isWalkable(col, row))) return null;
+    if (!this.grid[row]?.[col] || !this.isWalkable(startCol, startRow) || (!adjacent && !this.isWalkable(col, row))) return null;
     const start = startRow * GRID_COLS + startCol;
     const parents = new Int32Array(GRID_COLS * GRID_ROWS).fill(-1);
     parents[start] = start;
