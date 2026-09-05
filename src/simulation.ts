@@ -346,8 +346,8 @@ export class Simulation {
     });
 
     const soldier: AntSim = this.createAnt('Major Pincer', 'Soldier', 'Colony Defender', '#5c3318', 1.3, {
-      x: 24 * TILE_SIZE,
-      y: 13 * TILE_SIZE,
+      x: 25.5 * TILE_SIZE,
+      y: 13.5 * TILE_SIZE,
       z: 0,
       aspiration: 'Popularity',
       personality: { neat: 4, outgoing: 7, active: 9, playful: 8, nice: 6 },
