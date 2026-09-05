@@ -19,6 +19,7 @@ import type {
   ColonyObject,
   ColonyState,
   Personality,
+  QueuedAction,
   SaveGameData,
   SurfaceEntity,
   TileType,
@@ -891,8 +892,8 @@ export class Simulation {
       }
 
       if (finished) {
-        if (action.onComplete) action.onComplete(ant);
         ant.actionQueue.shift();
+        if (action.onComplete) action.onComplete(ant);
       }
     } else if (this.state.freeWill !== 'Off') {
       this.runAntAutonomy(ant, dt);
@@ -901,15 +902,13 @@ export class Simulation {
     ant.antennaTwitch += dt * (3 + Math.random() * 4);
     if (Math.abs(ant.vx) > 0.05 || Math.abs(ant.vy) > 0.05) {
       ant.walkCycle += dt * 8;
-      ant.x += ant.vx * dt;
-      ant.y += ant.vy * dt;
       ant.facing = ant.vx >= 0 ? 1 : -1;
     } else {
       ant.walkCycle = 0;
     }
 
-    ant.x = Math.max(1 * TILE_SIZE, Math.min((GRID_COLS - 2) * TILE_SIZE, ant.x));
-    ant.y = Math.max(2 * TILE_SIZE, Math.min((GRID_ROWS - 2) * TILE_SIZE, ant.y));
+    ant.x = Math.max(TILE_SIZE / 2, Math.min((GRID_COLS - 0.5) * TILE_SIZE, ant.x));
+    ant.y = Math.max(TILE_SIZE / 2, Math.min((GRID_ROWS - 0.5) * TILE_SIZE, ant.y));
   }
 
   // ==========================================
@@ -1108,9 +1107,7 @@ export class Simulation {
     if (ant.caste === 'Worker') {
       const digTile = this.findNearestDigTile(ant);
       if (digTile) {
-        this.queueWalkToCoord(ant, digTile.c * TILE_SIZE + 16, digTile.r * TILE_SIZE + 16, () => {
-          this.executeDigAction(ant, digTile.c, digTile.r);
-        });
+        this.executeDigAction(ant, digTile.c, digTile.r);
       } else {
         const pantry = this.colonyObjects.find(o => o.type === 'sugar_pantry');
         if (pantry && pantry.stateValue < 30) {
@@ -1251,7 +1248,7 @@ export class Simulation {
       for (let c = 0; c < GRID_COLS; c++) {
         if (this.grid[r][c].markedForDig) {
           const dist = Math.hypot(c * TILE_SIZE - ant.x, r * TILE_SIZE - ant.y);
-          if (dist < minDist) {
+          if (dist < minDist && this.findPath(ant.x, ant.y, (c + 0.5) * TILE_SIZE, (r + 0.5) * TILE_SIZE, true)) {
             minDist = dist;
             nearest = { c, r };
           }
@@ -1261,45 +1258,97 @@ export class Simulation {
     return nearest;
   }
 
-  public executeDigAction(ant: AntSim, col: number, row: number) {
-    ant.stateText = `Excavating soil at (${col}, ${row})`;
-    ant.isDigging = true;
-    ant.actionQueue.push({
-      id: `dig_${col}_${row}`,
-      name: 'Excavate Tunnel',
-      icon: '⛏️',
-      duration: 2.5,
-      elapsed: 0,
-      targetType: 'tile',
-      targetX: col * TILE_SIZE,
-      targetY: row * TILE_SIZE,
-      onComplete: a => {
-        a.isDigging = false;
-        if (this.grid[row] && this.grid[row][col]) {
-          this.grid[row][col].type = 'tunnel';
-          this.grid[row][col].markedForDig = false;
-        }
-        audio.playDigDirt();
-        this.state.pollenPoints += 8;
-        a.motives.colonyDuty = Math.min(100, a.motives.colonyDuty + 25);
-        this.triggerWant(a, 'dig_new_tunnel');
-      },
-      interruptible: true,
+  public executeDigAction(ant: AntSim, col: number, row: number): boolean {
+    const tile = this.grid[row]?.[col];
+    if (!tile || (tile.type !== 'soil' && tile.type !== 'hard_rock')) return false;
+    const path = this.findPath(ant.x, ant.y, (col + 0.5) * TILE_SIZE, (row + 0.5) * TILE_SIZE, true);
+    if (!path) {
+      ant.stateText = 'No reachable edge to dig from';
+      return false;
+    }
+    const edge = path[path.length - 1];
+    this.queueWalkToCoord(ant, edge.x, edge.y, () => {
+      ant.actionQueue.unshift({
+        id: `dig_${col}_${row}_${Math.random()}`,
+        name: 'Excavate Tunnel',
+        icon: '⛏️',
+        duration: 2.5,
+        elapsed: 0,
+        targetType: 'tile',
+        targetX: col * TILE_SIZE,
+        targetY: row * TILE_SIZE,
+        onStart: a => {
+          a.isDigging = true;
+          a.stateText = `Excavating soil at (${col}, ${row})`;
+        },
+        onComplete: a => {
+          a.isDigging = false;
+          const distance = Math.abs(Math.floor(a.x / TILE_SIZE) - col) + Math.abs(Math.floor(a.y / TILE_SIZE) - row);
+          if (distance !== 1 || (tile.type !== 'soil' && tile.type !== 'hard_rock')) return;
+          tile.type = 'tunnel';
+          tile.markedForDig = false;
+          audio.playDigDirt();
+          this.state.pollenPoints += 8;
+          a.motives.colonyDuty = Math.min(100, a.motives.colonyDuty + 25);
+          this.triggerWant(a, 'dig_new_tunnel');
+        },
+        interruptible: true,
+      });
     });
+    return true;
   }
 
   // ==========================================
   // BUY MODE
   // ==========================================
 
-  public buyObject(catalogType: string, tileCol: number, tileRow: number): boolean {
-    const item = CATALOG.find(c => c.type === catalogType);
-    if (!item) return false;
-
-    if (this.state.pollenPoints < item.cost) {
-      audio.playFearTriggered();
-      return false;
+  public getPlacementError(width: number, height: number, col: number, row: number, ignoreId?: string): string | null {
+    if (![col, row, width / TILE_SIZE, height / TILE_SIZE].every(Number.isInteger) || width <= 0 || height <= 0 ||
+        col < 0 || row < SURFACE_ROW || col + width / TILE_SIZE > GRID_COLS || row + height / TILE_SIZE > GRID_ROWS) {
+      return 'Keep the whole item inside the underground grid.';
     }
+    for (let r = row; r < row + height / TILE_SIZE; r++) {
+      for (let c = col; c < col + width / TILE_SIZE; c++) {
+        if (!this.isWalkable(c, r) || this.grid[r][c].type === 'sky') return 'Excavate the entire footprint first.';
+      }
+    }
+    const x = col * TILE_SIZE;
+    const y = row * TILE_SIZE;
+    if (this.colonyObjects.some(o => o.id !== ignoreId && x < o.x + o.width && x + width > o.x && y < o.y + o.height && y + height > o.y)) {
+      return 'That space overlaps another item.';
+    }
+    return null;
+  }
+
+  public getBuyError(catalogType: string, col: number, row: number): string | null {
+    const item = CATALOG.find(c => c.type === catalogType);
+    if (!item) return 'Choose an item from the catalog first.';
+    return this.getPlacementError(item.width * TILE_SIZE, item.height * TILE_SIZE, col, row) ||
+      (this.state.pollenPoints < item.cost ? 'Not enough § Pollen points!' : null);
+  }
+
+  public getMoveError(objectId: string, col: number, row: number): string | null {
+    const obj = this.colonyObjects.find(o => o.id === objectId);
+    if (!obj) return 'That item is no longer in the colony.';
+    if (obj.occupiedByAntId || this.ants.some(a => a.actionQueue.some(action => action.targetId === obj.id) ||
+        (a.isSleeping && a.x >= obj.x && a.x < obj.x + obj.width && a.y >= obj.y && a.y < obj.y + obj.height))) {
+      return 'Item is in use. Wait or cancel its queued interactions.';
+    }
+    return this.getPlacementError(obj.width, obj.height, col, row, obj.id);
+  }
+
+  public moveObject(objectId: string, col: number, row: number): boolean {
+    if (this.getMoveError(objectId, col, row)) return false;
+    const obj = this.colonyObjects.find(o => o.id === objectId)!;
+    obj.x = col * TILE_SIZE;
+    obj.y = row * TILE_SIZE;
+    audio.playPlaceObject();
+    return true;
+  }
+
+  public buyObject(catalogType: string, tileCol: number, tileRow: number): boolean {
+    if (this.getBuyError(catalogType, tileCol, tileRow)) return false;
+    const item = CATALOG.find(c => c.type === catalogType)!;
 
     this.state.pollenPoints -= item.cost;
     const newObj: ColonyObject = {
@@ -1346,10 +1395,53 @@ export class Simulation {
     }
   }
 
-  public queueWalkToCoord(ant: AntSim, targetX: number, targetY: number, onArrival: () => void) {
-    targetX = Math.max(TILE_SIZE, Math.min((GRID_COLS - 2) * TILE_SIZE, targetX));
-    targetY = Math.max(2 * TILE_SIZE, Math.min((GRID_ROWS - 2) * TILE_SIZE, targetY));
-    ant.actionQueue.push({
+  public isWalkable(col: number, row: number): boolean {
+    const type = this.grid[row]?.[col]?.type;
+    return type === 'sky' || type === 'tunnel' || type === 'chamber_floor' || type === 'royal_brick' || type === 'fungus_bed';
+  }
+
+  public findPath(startX: number, startY: number, targetX: number, targetY: number, adjacent: boolean = false): Array<{ x: number; y: number }> | null {
+    if (![startX, startY, targetX, targetY].every(Number.isFinite)) return null;
+    const startCol = Math.floor(startX / TILE_SIZE), startRow = Math.floor(startY / TILE_SIZE);
+    const col = Math.floor(targetX / TILE_SIZE), row = Math.floor(targetY / TILE_SIZE);
+    if (!this.isWalkable(startCol, startRow) || (!adjacent && !this.isWalkable(col, row))) return null;
+    const start = startRow * GRID_COLS + startCol;
+    const parents = new Int32Array(GRID_COLS * GRID_ROWS).fill(-1);
+    parents[start] = start;
+    const queue = [start];
+    for (let head = 0; head < queue.length; head++) {
+      const cell = queue[head];
+      const c = cell % GRID_COLS, r = Math.floor(cell / GRID_COLS);
+      if (adjacent ? Math.abs(c - col) + Math.abs(r - row) === 1 : c === col && r === row) {
+        const path: Array<{ x: number; y: number }> = [];
+        for (let at = cell; at !== start; at = parents[at]) {
+          path.push({ x: (at % GRID_COLS + 0.5) * TILE_SIZE, y: (Math.floor(at / GRID_COLS) + 0.5) * TILE_SIZE });
+        }
+        path.push({ x: (startCol + 0.5) * TILE_SIZE, y: (startRow + 0.5) * TILE_SIZE });
+        path.reverse();
+        if (!adjacent) {
+          if (cell === start) path.length = 0;
+          path.push({ x: targetX, y: targetY });
+        }
+        return path;
+      }
+      for (const [nc, nr] of [[c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]]) {
+        if (!this.isWalkable(nc, nr)) continue;
+        const next = nr * GRID_COLS + nc;
+        if (parents[next] !== -1) continue;
+        parents[next] = cell;
+        queue.push(next);
+      }
+    }
+    return null;
+  }
+
+  public queueWalkToCoord(ant: AntSim, targetX: number, targetY: number, onArrival: () => void): QueuedAction {
+    targetX = Math.max(TILE_SIZE / 2, Math.min((GRID_COLS - 0.5) * TILE_SIZE, targetX));
+    targetY = Math.max(TILE_SIZE / 2, Math.min((GRID_ROWS - 0.5) * TILE_SIZE, targetY));
+    let path: Array<{ x: number; y: number }> | null = null;
+    let arrived = false;
+    const action: QueuedAction = {
       id: `walk_${Math.random()}`,
       name: 'Walk to location',
       icon: '🐾',
@@ -1358,34 +1450,61 @@ export class Simulation {
       targetType: 'none',
       targetX,
       targetY,
+      onStart: a => {
+        path = this.findPath(a.x, a.y, targetX, targetY);
+        a.stateText = 'Walking through tunnels';
+      },
       onUpdate: (a, dt) => {
-        const dx = targetX - a.x;
-        const dy = targetY - a.y;
-        const dist = Math.hypot(dx, dy);
-
-        if (dist < 12) {
-          a.vx = 0;
-          a.vy = 0;
-          return true;
+        a.vx = 0;
+        a.vy = 0;
+        if (path?.some(p => !this.isWalkable(Math.floor(p.x / TILE_SIZE), Math.floor(p.y / TILE_SIZE)))) {
+          path = this.findPath(a.x, a.y, targetX, targetY);
         }
-
-        const speed = Math.min(a.aspirationLevel === 'Platinum' ? 75 : 55, dist / dt);
-        a.vx = (dx / dist) * speed;
-        a.vy = (dy / dist) * speed;
-        return false;
+        if (!path) return true;
+        const speed = a.aspirationLevel === 'Platinum' ? 75 : 55;
+        let remaining = speed * dt;
+        while (path.length > 0 && remaining > 0) {
+          const point = path[0];
+          const dx = point.x - a.x, dy = point.y - a.y;
+          const distance = Math.hypot(dx, dy);
+          if (distance <= remaining) {
+            a.x = point.x;
+            a.y = point.y;
+            path.shift();
+            remaining -= distance;
+          } else {
+            a.x += dx / distance * remaining;
+            a.y += dy / distance * remaining;
+            remaining = 0;
+          }
+          if (distance > 0) {
+            a.vx = dx / distance * speed;
+            a.vy = dy / distance * speed;
+          }
+        }
+        arrived = path.length === 0;
+        return arrived;
       },
       onComplete: () => {
         ant.vx = 0;
         ant.vy = 0;
-        onArrival();
+        if (arrived) onArrival();
+        else {
+          ant.stateText = 'No route to destination. Excavate a connecting tunnel.';
+          this.releaseBedReservations(ant);
+        }
       },
       interruptible: true,
-    });
+    };
+    ant.actionQueue.push(action);
+    return action;
   }
 
   public queueWalkToObject(ant: AntSim, obj: ColonyObject, onArrival: () => void) {
-    this.queueWalkToCoord(ant, obj.x + obj.width / 2, obj.y + obj.height / 2, onArrival);
-    const action = ant.actionQueue[ant.actionQueue.length - 1];
+    const action = this.queueWalkToCoord(ant, obj.x + obj.width / 2, obj.y + obj.height / 2, () => {
+      onArrival();
+      if (ant.isSleeping) obj.occupiedByAntId = ant.id;
+    });
     action.targetType = 'object';
     action.targetId = obj.id;
   }

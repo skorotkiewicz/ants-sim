@@ -73,6 +73,10 @@ class GameApp {
     });
     window.addEventListener('focusin', () => this.keysDown.clear());
     window.addEventListener('keydown', e => {
+      if (e.code === 'Escape' && this.ui.cancelPlacement()) {
+        e.preventDefault();
+        return;
+      }
       const target = e.target;
       if (target instanceof HTMLElement && (target.closest('input, textarea, select, button') || target.isContentEditable)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -96,6 +100,7 @@ class GameApp {
         this.ui.showNotification(isMuted ? 'Muted' : 'Audio On');
       } else if (e.code === 'F5' || e.code === 'Escape') {
         e.preventDefault();
+        this.ui.cancelPlacement();
         const modal = document.getElementById('options-modal')!;
         modal.style.display = modal.style.display === 'none' ? 'flex' : 'none';
         audio.playClick();
@@ -159,7 +164,9 @@ class GameApp {
         this.renderer.targetPos.y = this.targetStartY + dy * factor;
       }
 
-      // Highlight Tile under Cursor
+      // UI overlays are not placement targets.
+      this.sim.highlightedTile = null;
+      if (e.target !== canvas) return;
       const hit = this.renderer.raycast(e.clientX, e.clientY);
       if (hit) {
         const col = Math.floor(hit.point.x / TILE_SIZE);
@@ -172,6 +179,8 @@ class GameApp {
       }
     });
 
+    canvas.addEventListener('mouseleave', () => { this.sim.highlightedTile = null; });
+
     window.addEventListener('mouseup', e => {
       if (this.isOrbiting) {
         this.isOrbiting = false;
@@ -179,7 +188,7 @@ class GameApp {
 
       if (this.isDraggingCamera) {
         this.isDraggingCamera = false;
-        if (!this.hasDragged && e.button === 0) {
+        if (!this.hasDragged && e.button === 0 && e.target === canvas) {
           this.handleCanvasClick(e.clientX, e.clientY);
         }
       }
@@ -210,30 +219,7 @@ class GameApp {
     const col = Math.floor(worldX / TILE_SIZE);
     const row = Math.floor(worldY / TILE_SIZE);
 
-    // BUILD MODE
-    if (this.ui.activeMode === 'Build') {
-      if (row >= SURFACE_ROW && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
-        this.sim.instantDigTile(col, row);
-      }
-      return;
-    }
-
-    // BUY MODE
-    if (this.ui.activeMode === 'Buy') {
-      if (!this.ui.selectedCatalogItem) {
-        this.ui.showNotification('Choose an item from the catalog first!');
-        return;
-      }
-      if (row >= SURFACE_ROW && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
-        const success = this.sim.buyObject(this.ui.selectedCatalogItem, col, row);
-        if (success) {
-          this.ui.showNotification('Item placed in colony!');
-        } else {
-          this.ui.showNotification('Not enough § Pollen points!');
-        }
-      }
-      return;
-    }
+    if (this.ui.handlePlacementClick(worldX, worldY)) return;
 
     // LIVE MODE
     const sel = this.sim.getSelectedAnt();
@@ -290,7 +276,7 @@ class GameApp {
       if (row >= SURFACE_ROW && row < GRID_ROWS && col >= 0 && col < GRID_COLS) {
         const tile = this.sim.grid[row][col];
         if (tile.type === 'soil' || tile.type === 'hard_rock') {
-          this.sim.executeDigAction(sel, col, row);
+          if (!this.sim.executeDigAction(sel, col, row)) this.ui.showNotification('No reachable edge to dig from. Connect a tunnel first.');
         } else {
           this.sim.queueWalkToCoord(sel, worldX, worldY, () => {
             sel.stateText = 'Arrived at destination';

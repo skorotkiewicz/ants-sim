@@ -27,6 +27,7 @@ export class Renderer3D {
   private surfaceMeshes: Map<string, THREE.Group> = new Map();
   private broodMeshes: Map<string, THREE.Group> = new Map();
   private tileMeshes: Map<string, THREE.Mesh> = new Map();
+  private placementPreview: THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> | null = null;
 
   // Plumbob
   private plumbobMesh: THREE.Group;
@@ -99,6 +100,31 @@ export class Renderer3D {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+  }
+
+  public setPlacementPreview(placement: { col: number; row: number; width: number; height: number; valid: boolean } | null) {
+    if (!placement) {
+      if (this.placementPreview) this.placementPreview.visible = false;
+      return;
+    }
+    if (!this.placementPreview) {
+      const geometry = new THREE.PlaneGeometry(1, 1);
+      this.placementPreview = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({
+        transparent: true, opacity: 0.25, depthTest: false, depthWrite: false,
+      }));
+      const outline = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ depthTest: false, depthWrite: false }));
+      this.placementPreview.add(outline);
+      this.placementPreview.renderOrder = 100;
+      outline.renderOrder = 101;
+      this.scene.add(this.placementPreview);
+    }
+    const color = placement.valid ? 0x65d98b : 0xf06456;
+    this.placementPreview.material.color.setHex(color);
+    const outline = this.placementPreview.children[0] as THREE.LineSegments<THREE.EdgesGeometry, THREE.LineBasicMaterial>;
+    outline.material.color.setHex(color);
+    this.placementPreview.scale.set(placement.width, placement.height, 1);
+    this.placementPreview.position.set(placement.col * TILE_SIZE + placement.width / 2, -(placement.row * TILE_SIZE + placement.height / 2), 20);
+    this.placementPreview.visible = true;
   }
 
   public setPreset(preset: CameraPreset) {
@@ -743,8 +769,9 @@ export class Renderer3D {
         this.scene.add(group);
         this.objectMeshes.set(obj.id, group);
       }
+      const model = this.objectMeshes.get(obj.id)!;
+      model.position.set(obj.x + obj.width / 2, -(obj.y + obj.height / 2), obj.z);
       if (obj.type === 'spore_radio') {
-        const model = this.objectMeshes.get(obj.id)!;
         const record = model.getObjectByName('radio-record')!;
         if (obj.stateValue === 1 && sim.state.timeScale > 0) record.rotation.y += dt * 2;
         const light = model.getObjectByName('radio-light') as THREE.Mesh<THREE.SphereGeometry, THREE.MeshStandardMaterial>;

@@ -4,6 +4,7 @@
 // ==========================================
 
 import type { AntAccessoryType, AntSim, AspirationType, CasteType, GameMode, Motives } from './types';
+import { TILE_SIZE } from './types';
 import { Simulation } from './simulation';
 import { audio } from './audio';
 import { CATALOG } from './catalog';
@@ -24,6 +25,8 @@ export class UIManager {
   public activeTab: 'needs' | 'wants' | 'relationships' | 'personality' = 'needs';
   public activeCategory: string = 'All';
   public selectedCatalogItem: string | null = null;
+  public buildTool: 'Dig' | 'Move' = 'Dig';
+  public selectedObjectId: string | null = null;
 
   public pieMenuVisible: boolean = false;
   private notifTimeout: number | null = null;
@@ -80,6 +83,15 @@ export class UIManager {
 
       <!-- NOTIFICATION BANNER -->
       <div class="notification-banner" id="notif-banner">Welcome to The SimAnts 2!</div>
+
+      <div class="build-tools" id="build-tools" role="toolbar" aria-label="Placement tools" hidden>
+        <div id="build-tool-buttons">
+          <button class="btn-sims build-tool-btn" data-tool="Dig" aria-pressed="true">⛏️ Dig tunnels</button>
+          <button class="btn-sims build-tool-btn" data-tool="Move" aria-pressed="false">✋ Move items</button>
+        </div>
+        <button class="btn-sims secondary" id="btn-cancel-placement" title="Cancel selection (Escape)">Cancel</button>
+        <span id="build-status" role="status">Click soil or rock to excavate.</span>
+      </div>
 
       <!-- BUY / BUILD CATALOG DRAWER -->
       <div class="catalog-drawer" id="catalog-drawer">
@@ -367,9 +379,20 @@ export class UIManager {
     buildBtn.addEventListener('click', () => {
       this.setMode('Build');
       drawer.classList.remove('open');
-      this.showNotification('Build Mode: Click soil blocks to excavate!');
+      this.showNotification(this.buildTool === 'Move' ? 'Click an item, then its new location. Escape cancels.' : 'Build Mode: Click soil blocks to excavate!');
       audio.playClick();
     });
+
+    document.querySelectorAll<HTMLElement>('.build-tool-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.cancelPlacement();
+        this.buildTool = btn.dataset.tool as 'Dig' | 'Move';
+        document.querySelectorAll<HTMLElement>('.build-tool-btn').forEach(button => {
+          button.setAttribute('aria-pressed', String(button.dataset.tool === this.buildTool));
+        });
+      });
+    });
+    document.getElementById('btn-cancel-placement')!.addEventListener('click', () => this.cancelPlacement());
 
     // Time Controls
     document.getElementById('time-pause')!.addEventListener('click', () => this.setTimeScale(0));
@@ -566,6 +589,7 @@ export class UIManager {
   }
 
   private openModal(id: string) {
+    this.cancelPlacement();
     document.getElementById(id)!.style.display = 'flex';
   }
 
@@ -672,11 +696,74 @@ export class UIManager {
   // ==========================================
 
   public setMode(mode: GameMode) {
+    this.cancelPlacement();
+    this.hidePieMenu();
     this.activeMode = mode;
+    document.getElementById('build-tools')!.hidden = mode === 'Live';
+    document.getElementById('build-tool-buttons')!.hidden = mode !== 'Build';
     document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
     if (mode === 'Live') document.getElementById('btn-mode-live')!.classList.add('active');
     if (mode === 'Buy') document.getElementById('btn-mode-buy')!.classList.add('active');
     if (mode === 'Build') document.getElementById('btn-mode-build')!.classList.add('active');
+  }
+
+  public cancelPlacement(): boolean {
+    const hadSelection = this.selectedObjectId !== null || this.selectedCatalogItem !== null;
+    this.selectedObjectId = null;
+    this.selectedCatalogItem = null;
+    this.renderer?.setPlacementPreview(null);
+    return hadSelection;
+  }
+
+  public handlePlacementClick(worldX: number, worldY: number): boolean {
+    const col = Math.floor(worldX / TILE_SIZE), row = Math.floor(worldY / TILE_SIZE);
+    if (this.activeMode === 'Live') return false;
+    if (this.activeMode === 'Build' && this.buildTool === 'Dig') {
+      this.sim.instantDigTile(col, row);
+    } else if (this.activeMode === 'Build') {
+      if (this.selectedObjectId) {
+        const error = this.sim.getMoveError(this.selectedObjectId, col, row);
+        if (error) this.showNotification(error);
+        else if (this.sim.moveObject(this.selectedObjectId, col, row)) {
+          this.cancelPlacement();
+          this.showNotification('Item moved. No pollen spent.');
+        }
+      } else {
+        const obj = this.sim.colonyObjects.find(o => worldX >= o.x && worldX < o.x + o.width && worldY >= o.y && worldY < o.y + o.height);
+        if (obj) {
+          this.selectedObjectId = obj.id;
+          this.showNotification('Choose a green footprint to move here. Escape cancels.');
+        } else this.showNotification('Click an existing item to select it.');
+      }
+    } else {
+      const error = this.sim.getBuyError(this.selectedCatalogItem || '', col, row);
+      if (error) this.showNotification(error);
+      else if (this.sim.buyObject(this.selectedCatalogItem!, col, row)) this.showNotification('Item placed in colony!');
+    }
+    return true;
+  }
+
+  private updatePlacementPreview() {
+    if (this.activeMode === 'Live') return;
+    const tile = this.sim.highlightedTile;
+    const obj = this.sim.colonyObjects.find(o => o.id === this.selectedObjectId);
+    if (this.selectedObjectId && !obj) this.cancelPlacement();
+    const item = CATALOG.find(c => c.type === (obj?.type || this.selectedCatalogItem));
+    let hint = this.activeMode === 'Buy' ? 'Choose an item from the catalog.' :
+      this.buildTool === 'Move' ? 'Click an item, then its new location. Escape cancels.' : 'Click soil or rock to excavate.';
+    this.renderer?.setPlacementPreview(null);
+    if (tile && (obj || (this.activeMode === 'Buy' && item))) {
+      const width = obj?.width || item!.width * TILE_SIZE;
+      const height = obj?.height || item!.height * TILE_SIZE;
+      const error = obj ? this.sim.getMoveError(obj.id, tile.col, tile.row) : this.sim.getBuyError(item!.type, tile.col, tile.row);
+      this.renderer?.setPlacementPreview({ ...tile, width, height, valid: !error });
+      hint = error || `Click to place ${item?.name || 'item'}. Escape cancels.`;
+    } else if (tile && this.activeMode === 'Build' && this.buildTool === 'Dig') {
+      const type = this.sim.grid[tile.row]?.[tile.col]?.type;
+      this.renderer?.setPlacementPreview({ ...tile, width: TILE_SIZE, height: TILE_SIZE, valid: type === 'soil' || type === 'hard_rock' });
+    }
+    const status = document.getElementById('build-status')!;
+    if (status.innerText !== hint) status.innerText = hint;
   }
 
   public setTimeScale(scale: number) {
@@ -794,6 +881,7 @@ export class UIManager {
   // ==========================================
 
   public update(_dt: number) {
+    this.updatePlacementPreview();
     const sel = this.sim.getSelectedAnt();
 
     // Clock & Funds
