@@ -1516,7 +1516,7 @@ export class Simulation {
   }
 
   // ==========================================
-  // SAVE / LOAD SYSTEM (COMMERCIAL READY)
+  // SAVE / LOAD SYSTEM
   // ==========================================
 
   public serialize(): SaveGameData {
@@ -1539,7 +1539,70 @@ export class Simulation {
     };
   }
 
-  public deserialize(data: SaveGameData) {
+  private validateSaveData(data: unknown): asserts data is SaveGameData {
+    const record = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+    const fields = (v: unknown, strings: string[], numbers: string[] = [], booleans: string[] = []): v is Record<string, unknown> =>
+      record(v) && strings.every(k => typeof v[k] === 'string') &&
+      numbers.every(k => typeof v[k] === 'number' && Number.isFinite(v[k])) && booleans.every(k => typeof v[k] === 'boolean');
+    const records = (v: unknown, valid: (v: Record<string, unknown>) => boolean): v is Record<string, unknown>[] =>
+      Array.isArray(v) && Array.from(v).every(item => record(item) && valid(item));
+    const oneOf = (v: unknown, choices: readonly unknown[]) => choices.includes(v);
+    const optional = (v: unknown, type: 'string' | 'boolean') => v === undefined || typeof v === type;
+    const positive = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v > 0;
+    const range = (v: unknown, min: number, max: number) => typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max;
+    function check(valid: unknown, section: string): asserts valid {
+      if (!valid) throw new Error(`Invalid save: ${section}`);
+    }
+
+    check(fields(data, ['saveTime', 'colonyName']) && data.version === 1 && Number.isFinite(Date.parse(data.saveTime as string)), 'format or version');
+    const state = data.state;
+    check(fields(state, ['weather', 'freeWill', 'radioStation'], ['pollenPoints', 'day', 'timeOfDay', 'timeScale', 'musicVolume', 'sfxVolume', 'masterVolume']) &&
+      range(state.pollenPoints, 0, Number.MAX_SAFE_INTEGER) && Number.isSafeInteger(state.day) && positive(state.day) &&
+      range(state.timeOfDay, 0, 24) && oneOf(state.timeScale, [0, 1, 2, 4]) &&
+      ['musicVolume', 'sfxVolume', 'masterVolume'].every(k => range(state[k], 0, 1)) &&
+      oneOf(state.weather, ['Sunny', 'Gentle_Breeze', 'Picnic_Day', 'Light_Shower']) &&
+      oneOf(state.freeWill, ['High', 'Medium', 'Off']) && oneOf(state.radioStation, ['Spore_Jazz', 'Anthill_Bossa', 'Chitter_Pop']), 'settings');
+    check(Array.isArray(data.grid) && data.grid.length === GRID_ROWS && Array.from(data.grid).every(row =>
+      Array.isArray(row) && row.length === GRID_COLS && records(row, tile =>
+        oneOf(tile.type, ['sky', 'grass', 'soil', 'hard_rock', 'tunnel', 'chamber_floor', 'royal_brick', 'fungus_bed']) &&
+        optional(tile.markedForDig, 'boolean'))), 'grid');
+
+    const wantOrFear = (v: Record<string, unknown>) => fields(v, ['id', 'key', 'name', 'description', 'icon'], ['points']) &&
+      optional(v.targetId, 'string') && oneOf(v.key, ['eat_honeydew', 'eat_watermelon', 'share_trophallaxis', 'nap_in_hammock',
+        'dance_to_radio', 'play_antenna_joust', 'tell_joke', 'dig_new_tunnel', 'feed_baby_larva', 'tend_queen', 'pet_aphid',
+        'defeat_pest', 'stockpile_sugar', 'starve', 'rejected_social', 'pass_out_exhausted', 'larva_goes_hungry', 'spider_attack', 'cave_in']);
+    check(records(data.ants, ant =>
+      fields(ant, ['id', 'name', 'title', 'color', 'stateText'],
+        ['scale', 'aspirationScore', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'facing', 'walkCycle', 'antennaTwitch'],
+        ['isSleeping', 'isDancing', 'isDigging', 'failurePsychiatrist']) && positive(ant.scale) &&
+      oneOf(ant.caste, ['Queen', 'Worker', 'Nurse', 'Soldier', 'Forager']) &&
+      oneOf(ant.accessory, ['none', 'crown', 'hardhat', 'nurse_cap', 'helmet', 'flower', 'goggles']) &&
+      oneOf(ant.aspiration, ['Pleasure', 'Fortune', 'Brood', 'Popularity', 'Knowledge']) &&
+      oneOf(ant.aspirationLevel, ['Failure', 'Red', 'Green', 'Gold', 'Platinum']) &&
+      oneOf(ant.heldItem, ['none', 'sugar_crumb', 'watermelon_chunk', 'honeydew_drop', 'fungus_mash', 'egg', 'larva', 'dirt_clod', 'flower_petal', 'shiny_pebble']) &&
+      fields(ant.personality, [], ['neat', 'outgoing', 'active', 'playful', 'nice']) &&
+      fields(ant.motives, [], ['hunger', 'energy', 'grooming', 'social', 'fun', 'colonyDuty']) &&
+      fields(ant.skills, [], ['digging', 'foraging', 'nursing', 'combat', 'charisma']) &&
+      records(ant.memories, memory => fields(memory, ['id', 'title', 'description', 'icon'], ['day'], ['isPositive'])) &&
+      records(ant.wants, wantOrFear) && records(ant.fears, wantOrFear) && record(ant.relationships) &&
+      Object.values(ant.relationships).every(rel => fields(rel, [], ['daily', 'lifetime']) &&
+        ['isBestFriend', 'isCrush', 'isRival'].every(k => optional(rel[k], 'boolean')))), 'ants');
+    check(records(data.brood, brood => fields(brood, ['id'], ['x', 'y', 'z', 'age', 'growthDuration', 'hunger', 'careQuality']) &&
+      oneOf(brood.stage, ['egg', 'larva', 'pupa']) && positive(brood.growthDuration)), 'brood');
+    const dimensions = (v: Record<string, unknown>) => fields(v, ['id', 'type'], ['x', 'y', 'z', 'width', 'height', 'depth']) &&
+      ['width', 'height', 'depth'].every(k => positive(v[k]));
+    check(records(data.colonyObjects, obj => dimensions(obj) && Number.isFinite(obj.stateValue) &&
+      CATALOG.some(item => item.type === obj.type) && optional(obj.occupiedByAntId, 'string')), 'furniture');
+    check(records(data.surfaceEntities, entity => dimensions(entity) && fields(entity, [], ['resourcesRemaining', 'maxResources']) &&
+      oneOf(entity.type, ['watermelon', 'donut', 'sugar_pile', 'aphid', 'flower', 'spider', 'raindrop']) && optional(entity.tamed, 'boolean')), 'surface entities');
+    const ids = [...data.ants, ...data.brood, ...data.colonyObjects, ...data.surfaceEntities].map(entity => entity.id);
+    check(ids.every(id => typeof id === 'string' && id.length > 0) && new Set(ids).size === ids.length, 'entity IDs');
+    check(data.selectedAntId === null || typeof data.selectedAntId === 'string' && data.ants.some(ant => ant.id === data.selectedAntId), 'selected ant');
+  }
+
+  public deserialize(input: unknown) {
+    this.validateSaveData(input);
+    const data = structuredClone(input);
     this.state = { ...data.state };
     this.selectedAntId = data.selectedAntId;
 

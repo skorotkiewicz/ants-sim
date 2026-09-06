@@ -115,6 +115,92 @@ test('loading restores the ID counter and clears actions without leaving motion 
   expect(Number(newAnt.id.split('_')[1])).toBeGreaterThan(950);
 });
 
+test('invalid imports and local saves leave the live colony and queued actions unchanged', () => {
+  const sim = controlledColony();
+  const ant = sim.ants[0];
+  const action = sim.queueWalkToCoord(ant, ant.x + 80, ant.y, () => {});
+  const snapshot = () => JSON.stringify({ ...sim.serialize(), saveTime: '' });
+  const before = snapshot();
+  const invalid: unknown[] = [null, {}, [], 'not a save'];
+  const mutations: Array<(data: any) => void> = [
+    data => { data.version = 2; },
+    data => { delete data.state.freeWill; },
+    data => { data.state.timeScale = -1; },
+    data => { data.state.masterVolume = 2; },
+    data => { data.grid.pop(); },
+    data => { data.grid[0].pop(); },
+    data => { data.grid[0][0].type = 'lava'; },
+    data => { data.ants[0].motives = {}; },
+    data => { data.ants[0].x = Infinity; },
+    data => { data.ants[0].caste = 'Wizard'; },
+    data => { data.ants[0].wants = [null]; },
+    data => { data.ants[0].relationships.other = { daily: 'bad', lifetime: 0 }; },
+    data => { data.colonyObjects[0].width = 0; },
+    data => { data.surfaceEntities.at(-1).id = 123; },
+    data => { data.colonyObjects[0].id = data.ants[0].id; },
+  ];
+  for (const mutate of mutations) {
+    const data = JSON.parse(sim.exportSaveJSON());
+    data.state.pollenPoints += 99;
+    data.grid[11][0].type = 'tunnel';
+    mutate(data);
+    invalid.push(data);
+  }
+  const errors = spyOn(console, 'error').mockImplementation(() => {});
+  const previousStorage = globalThis.localStorage;
+  let stored = '';
+  globalThis.localStorage = { getItem: () => stored } as any;
+  try {
+    expect(sim.importSaveJSON('{broken')).toBe(false);
+    for (const data of invalid) {
+      stored = JSON.stringify(data);
+      expect(sim.importSaveJSON(stored)).toBe(false);
+      expect(snapshot()).toBe(before);
+      expect(sim.loadFromLocalStorage()).toBe(false);
+      expect(snapshot()).toBe(before);
+      expect(() => sim.deserialize(data as any)).toThrow();
+      expect(snapshot()).toBe(before);
+      expect(sim.ants[0]).toBe(ant);
+      expect(ant.actionQueue[0]).toBe(action);
+    }
+  } finally {
+    globalThis.localStorage = previousStorage;
+    errors.mockRestore();
+  }
+});
+
+test('valid saves round-trip through storage and imports without retaining input references', () => {
+  const source = new Simulation();
+  source.state.freeWill = 'Off';
+  source.state.pollenPoints = 731;
+  source.grid[11][0].markedForDig = true;
+  const previousStorage = globalThis.localStorage;
+  const slots = new Map<string, string>();
+  globalThis.localStorage = {
+    getItem: (key: string) => slots.get(key) ?? null,
+    setItem: (key: string, value: string) => { slots.set(key, value); },
+  } as any;
+  try {
+    expect(source.saveToLocalStorage('slot_2')).toBe(true);
+    const sim = new Simulation();
+    expect(sim.loadFromLocalStorage('slot_2')).toBe(true);
+    expect(sim.state).toEqual(source.state);
+    expect(sim.grid[11][0].markedForDig).toBe(true);
+    expect(sim.brood).toEqual(source.brood);
+    expect(sim.ants[0].memories).toEqual(source.ants[0].memories);
+    expect(sim.importSaveJSON(source.exportSaveJSON())).toBe(true);
+    const data = JSON.parse(source.exportSaveJSON());
+    sim.deserialize(data);
+    data.ants[0].motives.hunger = -999;
+    data.colonyObjects[0].stateValue = -999;
+    expect(sim.ants[0].motives.hunger).toBe(source.ants[0].motives.hunger);
+    expect(sim.colonyObjects[0].stateValue).toBe(source.colonyObjects[0].stateValue);
+    expect(() => advance(sim, 1)).not.toThrow();
+  } finally {
+    globalThis.localStorage = previousStorage;
+  }
+});
+
 // Exercise scene synchronization without creating a WebGL context.
 function sceneRenderer() {
   const renderer = Object.create(Renderer3D.prototype) as any;
