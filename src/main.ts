@@ -451,13 +451,12 @@ class GameApp {
           icon: '🍯',
           action: () => {
             this.sim.queueWalkToObject(actor, obj, () => {
-              if (obj.stateValue > 0) {
-                obj.stateValue = Math.max(0, obj.stateValue - 2);
+              if (this.sim.takeFood(obj, 2)) {
                 actor.motives.hunger = Math.min(100, actor.motives.hunger + 45);
                 this.sim.showBubble(actor, '🍯', false, 2.5);
                 audio.playChime(750);
               } else {
-                this.ui.showNotification('Pantry is empty! Forage sugar from surface.');
+                this.ui.showNotification('Not enough stored sugar for a meal. Forage from the surface.');
               }
             });
           },
@@ -509,7 +508,10 @@ class GameApp {
         icon: '🍄',
         action: () => {
           this.sim.queueWalkToObject(actor, obj, () => {
-            obj.stateValue = Math.max(0, obj.stateValue - 15);
+            if (!this.sim.takeFood(obj, 15)) {
+              this.ui.showNotification('Not enough fungus yet. Give it time to grow.');
+              return;
+            }
             actor.motives.hunger = Math.min(100, actor.motives.hunger + 40);
             this.sim.showBubble(actor, '🍄', false, 2.5);
             audio.playChime(600);
@@ -533,7 +535,10 @@ class GameApp {
           icon: '🍉',
           action: () => {
             this.sim.queueWalkToCoord(actor, ent.x, ent.y, () => {
-              ent.resourcesRemaining = Math.max(0, ent.resourcesRemaining - 4);
+              if (!this.sim.takeFood(ent, 4)) {
+                this.ui.showNotification('Not enough watermelon for a meal.');
+                return;
+              }
               actor.motives.hunger = Math.min(100, actor.motives.hunger + 50);
               this.sim.showBubble(actor, '🍉', false, 3.0);
               this.sim.triggerWant(actor, 'eat_watermelon');
@@ -546,8 +551,15 @@ class GameApp {
           icon: '🎒',
           action: () => {
             this.sim.queueWalkToCoord(actor, ent.x, ent.y, () => {
+              if (actor.heldItem !== 'none') {
+                this.ui.showNotification('Deposit your carried food first.');
+                return;
+              }
+              if (!this.sim.takeFood(ent, 1)) {
+                this.ui.showNotification('No watermelon chunks left.');
+                return;
+              }
               actor.heldItem = 'watermelon_chunk';
-              ent.resourcesRemaining -= 1;
               this.sim.showBubble(actor, '🍉', false, 2.5);
             });
           },
@@ -559,7 +571,10 @@ class GameApp {
         icon: '🍩',
         action: () => {
           this.sim.queueWalkToCoord(actor, ent.x, ent.y, () => {
-            ent.resourcesRemaining = Math.max(0, ent.resourcesRemaining - 4);
+            if (!this.sim.takeFood(ent, 4)) {
+              this.ui.showNotification('Not enough donut left for a meal.');
+              return;
+            }
             actor.motives.hunger = Math.min(100, actor.motives.hunger + 50);
             actor.motives.fun = Math.min(100, actor.motives.fun + 20);
             this.sim.showBubble(actor, '🍩', false, 3.0);

@@ -942,8 +942,16 @@ export class Simulation {
     this.autonomousCasteWork(ant, dt);
   }
 
+  public takeFood(source: ColonyObject | SurfaceEntity, amount: number): boolean {
+    const stock = 'stateValue' in source ? source.stateValue : source.resourcesRemaining;
+    if (!Number.isFinite(amount) || amount <= 0 || !Number.isFinite(stock) || stock < amount) return false;
+    if ('stateValue' in source) source.stateValue -= amount;
+    else source.resourcesRemaining -= amount;
+    return true;
+  }
+
   private autonomousSeekFood(ant: AntSim) {
-    const pantry = this.colonyObjects.find(o => o.type === 'sugar_pantry' && o.stateValue > 0);
+    const pantry = this.colonyObjects.find(o => o.type === 'sugar_pantry' && o.stateValue >= 2);
     if (pantry) {
       this.queueWalkToObject(ant, pantry, () => {
         ant.stateText = 'Munching sugar at pantry';
@@ -956,7 +964,7 @@ export class Simulation {
           targetType: 'object',
           targetId: pantry.id,
           onComplete: a => {
-            pantry.stateValue = Math.max(0, pantry.stateValue - 2);
+            if (!this.takeFood(pantry, 2)) return;
             a.motives.hunger = Math.min(100, a.motives.hunger + 45);
             audio.playChime(750);
             this.showBubble(a, '🍯', false, 2.0);
@@ -967,7 +975,7 @@ export class Simulation {
       return;
     }
 
-    const fungus = this.colonyObjects.find(o => o.type === 'fungus_garden' && o.stateValue >= 20);
+    const fungus = this.colonyObjects.find(o => o.type === 'fungus_garden' && o.stateValue >= 15);
     if (fungus) {
       this.queueWalkToObject(ant, fungus, () => {
         ant.stateText = 'Snacking on cultivated fungus';
@@ -980,7 +988,7 @@ export class Simulation {
           targetType: 'object',
           targetId: fungus.id,
           onComplete: a => {
-            fungus.stateValue = Math.max(0, fungus.stateValue - 15);
+            if (!this.takeFood(fungus, 15)) return;
             a.motives.hunger = Math.min(100, a.motives.hunger + 35);
             this.showBubble(a, '🍄', false, 2.0);
           },
@@ -990,7 +998,7 @@ export class Simulation {
       return;
     }
 
-    const melon = this.surfaceEntities.find(e => e.type === 'watermelon' && e.resourcesRemaining > 0);
+    const melon = this.surfaceEntities.find(e => e.type === 'watermelon' && e.resourcesRemaining >= 5);
     if (melon) {
       this.queueWalkToCoord(ant, melon.x, melon.y, () => {
         ant.stateText = 'Feasting on summer watermelon';
@@ -1003,7 +1011,7 @@ export class Simulation {
           targetType: 'surface_entity',
           targetId: melon.id,
           onComplete: a => {
-            melon.resourcesRemaining = Math.max(0, melon.resourcesRemaining - 5);
+            if (!this.takeFood(melon, 5)) return;
             a.motives.hunger = Math.min(100, a.motives.hunger + 55);
             this.triggerWant(a, 'eat_watermelon');
           },
@@ -1111,14 +1119,15 @@ export class Simulation {
       } else {
         const pantry = this.colonyObjects.find(o => o.type === 'sugar_pantry');
         if (pantry && pantry.stateValue < 30) {
-          const sugar = this.surfaceEntities.find(s => s.type === 'sugar_pile' && s.resourcesRemaining > 0);
+          const sugar = this.surfaceEntities.find(s => s.type === 'sugar_pile' && s.resourcesRemaining >= 1);
           if (sugar && ant.heldItem === 'none') {
             this.queueWalkToCoord(ant, sugar.x, sugar.y, () => {
+              if (ant.heldItem !== 'none' || !this.takeFood(sugar, 1)) return;
               ant.heldItem = 'sugar_crumb';
-              sugar.resourcesRemaining -= 1;
               this.showBubble(ant, '🍯', false, 2.0);
 
               this.queueWalkToObject(ant, pantry, () => {
+                if (ant.heldItem !== 'sugar_crumb') return;
                 ant.heldItem = 'none';
                 pantry.stateValue += 5;
                 this.state.pollenPoints += 15;

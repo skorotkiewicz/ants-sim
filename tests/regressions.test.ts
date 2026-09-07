@@ -201,6 +201,91 @@ test('valid saves round-trip through storage and imports without retaining input
   }
 });
 
+for (const [type, portion] of [['sugar_pantry', 2], ['fungus_garden', 15], ['watermelon', 5]] as const) {
+  test(`${type} is checked again when a queued meal finishes`, () => {
+    const sim = controlledColony();
+    const ant = sim.ants[0];
+    sim.colonyObjects.forEach(obj => { obj.stateValue = 0; });
+    sim.surfaceEntities.forEach(entity => { entity.resourcesRemaining = 0; });
+    const source = type === 'watermelon' ? sim.surfaceEntities.find(e => e.type === type)! : sim.colonyObjects.find(o => o.type === type)!;
+    const setStock = (amount: number) => {
+      if ('stateValue' in source) source.stateValue = amount;
+      else source.resourcesRemaining = amount;
+    };
+    ant.x = source.x + ('stateValue' in source ? source.width / 2 : 0);
+    ant.y = source.y + ('stateValue' in source ? source.height / 2 : 0);
+    const startMeal = () => {
+      ant.motives.hunger = 30;
+      setStock(20);
+      sim.state.freeWill = 'High';
+      sim.update(0.1);
+      sim.state.freeWill = 'Off';
+      sim.update(0.1);
+      expect(ant.actionQueue[0]?.name).toContain('Eat');
+    };
+    startMeal();
+    setStock(0);
+    advance(sim, 5);
+    expect(ant.actionQueue).toHaveLength(0);
+    expect(ant.motives.hunger).toBeLessThan(30);
+    startMeal();
+    setStock(portion);
+    advance(sim, 5);
+    expect(ant.motives.hunger).toBeGreaterThan(60);
+    const remaining = 'stateValue' in source ? source.stateValue : source.resourcesRemaining;
+    expect(remaining).toBeGreaterThanOrEqual(0);
+    expect(remaining).toBeLessThan(portion);
+  });
+}
+
+test('two ants cannot eat the same last portion', () => {
+  const sim = new Simulation();
+  sim.brood = [];
+  sim.ants = [sim.ants[1], sim.ants[2]];
+  const pantry = sim.colonyObjects.find(o => o.type === 'sugar_pantry')!;
+  pantry.stateValue = 2;
+  for (const ant of sim.ants) {
+    ant.x = pantry.x + pantry.width / 2;
+    ant.y = pantry.y + pantry.height / 2;
+    ant.motives.hunger = 30;
+  }
+  sim.update(0.1);
+  sim.state.freeWill = 'Off';
+  advance(sim, 5);
+  expect(sim.ants.filter(ant => ant.motives.hunger > 60)).toHaveLength(1);
+  expect(pantry.stateValue).toBe(0);
+});
+
+test('a worker cannot collect depleted sugar or deposit food it no longer carries', () => {
+  const sim = controlledColony();
+  const ant = sim.ants[0];
+  const sugar = sim.surfaceEntities.find(e => e.type === 'sugar_pile')!;
+  const pantry = sim.colonyObjects.find(o => o.type === 'sugar_pantry')!;
+  pantry.stateValue = 0;
+  ant.x = sugar.x;
+  ant.y = sugar.y;
+  sim.state.freeWill = 'High';
+  sim.update(0.1);
+  sim.state.freeWill = 'Off';
+  sugar.resourcesRemaining = 0;
+  sim.update(0.1);
+  expect(ant.heldItem).toBe('none');
+  expect(sugar.resourcesRemaining).toBe(0);
+  expect(ant.actionQueue).toHaveLength(0);
+  sugar.resourcesRemaining = 1;
+  sim.state.freeWill = 'High';
+  sim.update(0.1);
+  sim.state.freeWill = 'Off';
+  sim.update(0.1);
+  expect(ant.heldItem).toBe('sugar_crumb');
+  ant.heldItem = 'none';
+  const funds = sim.state.pollenPoints;
+  advance(sim, 30);
+  expect(ant.actionQueue).toHaveLength(0);
+  expect(pantry.stateValue).toBe(0);
+  expect(sim.state.pollenPoints).toBe(funds);
+});
+
 // Exercise scene synchronization without creating a WebGL context.
 function sceneRenderer() {
   const renderer = Object.create(Renderer3D.prototype) as any;
